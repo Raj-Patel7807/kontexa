@@ -1,0 +1,46 @@
+[project]
+name = "kontexa"
+version = "0.1.0"
+description = "Kontexa AI workspace for software engineers - Backend API"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.8.0",
+    "pydantic-settings>=2.4.0",
+    "sqlalchemy>=2.0.30",
+    "asyncpg>=0.29.0",
+    "psycopg2-binary>=2.9.9",
+    "alembic>=1.13.0",
+    "redis>=5.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kontexa"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+    "ruff>=0.5.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4"]
+ignore = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
