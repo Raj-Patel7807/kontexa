@@ -17,7 +17,11 @@ export const metadata: Metadata = {
   description: "Engineering foundation for Kontexa AI workspace monorepo.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
     <html
       lang="en"
