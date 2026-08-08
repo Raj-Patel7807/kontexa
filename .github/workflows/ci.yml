@@ -1,0 +1,14 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  backend-ci:
+    uses: ./.github/workflows/backend.yml
+
+  frontend-ci:
+    uses: ./.github/workflows/frontend.yml
