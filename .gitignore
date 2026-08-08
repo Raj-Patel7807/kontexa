@@ -1,0 +1,53 @@
+# Environment & Local Secrets
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+
+# Python & uv
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Node & Next.js
+node_modules/
+.next/
+out/
+.next_cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+coverage/
+
+# IDEs & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-workspace
+*.sublime-project
+.ds_store
+Thumbs.db
+
+# Docker & OS artifacts
+*.log
+docker-volumes/
+.docker/
+
+# Keep lockfiles
+!backend/uv.lock
+!frontend/package-lock.json
