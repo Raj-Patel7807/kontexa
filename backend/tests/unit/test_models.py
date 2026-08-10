@@ -3,6 +3,9 @@
 from sqlalchemy import inspect
 
 from kontexa.database.models.base import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
+from kontexa.database.models.conversations import Conversation
+from kontexa.database.models.messages import Message, MessagePart
+from kontexa.database.models.projects import Project
 from kontexa.database.models.users import User
 from kontexa.database.models.workspaces import Workspace, WorkspaceMember
 from kontexa.database.session import Base
@@ -127,8 +130,140 @@ def test_workspace_member_user_fk_cascades_on_delete() -> None:
     assert fk.ondelete == "CASCADE"
 
 
+# ---------------------------------------------------------------------------
+# Project model tests
+# ---------------------------------------------------------------------------
+
+
+def test_project_table_name() -> None:
+    """Verify the Project model maps to 'projects'."""
+    assert Project.__tablename__ == "projects"
+
+
+def test_project_has_expected_columns() -> None:
+    """Verify Project model declares all required columns."""
+    mapper = inspect(Project)
+    column_names = {col.key for col in mapper.column_attrs}
+    expected = {
+        "id", "workspace_id", "name", "slug", "description",
+        "status", "created_at", "updated_at", "deleted_at",
+    }
+    assert expected.issubset(column_names)
+
+
+def test_project_workspace_fk_cascades_on_delete() -> None:
+    """Verify Project.workspace_id FK uses ON DELETE CASCADE."""
+    fk = next(iter(Project.__table__.c.workspace_id.foreign_keys))
+    assert fk.ondelete == "CASCADE"
+
+
+def test_project_has_unique_workspace_slug_index() -> None:
+    """Verify projects has a unique composite index on (workspace_id, slug)."""
+    index_names = {idx.name for idx in Project.__table__.indexes}
+    assert "idx_projects_workspace_slug" in index_names
+
+
+# ---------------------------------------------------------------------------
+# Conversation model tests
+# ---------------------------------------------------------------------------
+
+
+def test_conversation_table_name() -> None:
+    """Verify the Conversation model maps to 'conversations'."""
+    assert Conversation.__tablename__ == "conversations"
+
+
+def test_conversation_has_expected_columns() -> None:
+    """Verify Conversation model declares all required columns."""
+    mapper = inspect(Conversation)
+    column_names = {col.key for col in mapper.column_attrs}
+    expected = {
+        "id", "workspace_id", "project_id", "title",
+        "is_active", "metadata_", "created_at", "updated_at", "deleted_at",
+    }
+    assert expected.issubset(column_names)
+
+
+def test_conversation_workspace_fk_cascades() -> None:
+    """Verify Conversation.workspace_id FK uses ON DELETE CASCADE."""
+    fk = next(iter(Conversation.__table__.c.workspace_id.foreign_keys))
+    assert fk.ondelete == "CASCADE"
+
+
+def test_conversation_project_fk_sets_null() -> None:
+    """Verify Conversation.project_id FK uses ON DELETE SET NULL."""
+    fk = next(iter(Conversation.__table__.c.project_id.foreign_keys))
+    assert fk.ondelete == "SET NULL"
+
+
+# ---------------------------------------------------------------------------
+# Message model tests
+# ---------------------------------------------------------------------------
+
+
+def test_message_table_name() -> None:
+    """Verify the Message model maps to 'messages'."""
+    assert Message.__tablename__ == "messages"
+
+
+def test_message_has_expected_columns() -> None:
+    """Verify Message model declares all required columns."""
+    mapper = inspect(Message)
+    column_names = {col.key for col in mapper.column_attrs}
+    expected = {
+        "id", "conversation_id", "user_id", "content",
+        "metadata_", "created_at", "updated_at",
+    }
+    assert expected.issubset(column_names)
+
+
+def test_message_conversation_fk_cascades() -> None:
+    """Verify Message.conversation_id FK uses ON DELETE CASCADE."""
+    fk = next(iter(Message.__table__.c.conversation_id.foreign_keys))
+    assert fk.ondelete == "CASCADE"
+
+
+def test_message_user_fk_sets_null() -> None:
+    """Verify Message.user_id FK uses ON DELETE SET NULL."""
+    fk = next(iter(Message.__table__.c.user_id.foreign_keys))
+    assert fk.ondelete == "SET NULL"
+
+
+# ---------------------------------------------------------------------------
+# MessagePart model tests
+# ---------------------------------------------------------------------------
+
+
+def test_message_part_table_name() -> None:
+    """Verify the MessagePart model maps to 'message_parts'."""
+    assert MessagePart.__tablename__ == "message_parts"
+
+
+def test_message_part_has_expected_columns() -> None:
+    """Verify MessagePart declares all required columns."""
+    mapper = inspect(MessagePart)
+    column_names = {col.key for col in mapper.column_attrs}
+    expected = {"id", "message_id", "part_index", "content", "mime_type"}
+    assert expected.issubset(column_names)
+
+
+def test_message_part_message_fk_cascades() -> None:
+    """Verify MessagePart.message_id FK uses ON DELETE CASCADE."""
+    fk = next(iter(MessagePart.__table__.c.message_id.foreign_keys))
+    assert fk.ondelete == "CASCADE"
+
+
+# ---------------------------------------------------------------------------
+# Metadata registration
+# ---------------------------------------------------------------------------
+
+
 def test_all_models_registered_in_base_metadata() -> None:
-    """Verify all core models are registered in Base.metadata.tables."""
+    """Verify all models are registered in Base.metadata.tables."""
     table_names = set(Base.metadata.tables.keys())
-    expected = {"users", "workspaces", "workspace_members"}
+    expected = {
+        "users", "workspaces", "workspace_members",
+        "projects", "conversations", "messages", "message_parts",
+    }
     assert expected.issubset(table_names)
+
