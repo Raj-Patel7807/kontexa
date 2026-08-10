@@ -4,6 +4,9 @@ from sqlalchemy import inspect
 
 from kontexa.database.models.base import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
 from kontexa.database.models.conversations import Conversation
+from kontexa.database.models.documents import Document, DocumentChunk, DocumentVersion
+from kontexa.database.models.integrations import Integration
+from kontexa.database.models.memory import MemoryEntry
 from kontexa.database.models.messages import Message, MessagePart
 from kontexa.database.models.projects import Project
 from kontexa.database.models.users import User
@@ -254,6 +257,109 @@ def test_message_part_message_fk_cascades() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Document model tests
+# ---------------------------------------------------------------------------
+
+
+def test_document_table_name() -> None:
+    """Verify the Document model maps to 'documents'."""
+    assert Document.__tablename__ == "documents"
+
+
+def test_document_has_expected_columns() -> None:
+    """Verify Document model declares all required columns."""
+    mapper = inspect(Document)
+    column_names = {col.key for col in mapper.column_attrs}
+    expected = {"id", "project_id", "title", "metadata_", "created_at"}
+    assert expected.issubset(column_names)
+
+
+def test_document_project_fk_cascades() -> None:
+    """Verify Document.project_id FK uses ON DELETE CASCADE."""
+    fk = next(iter(Document.__table__.c.project_id.foreign_keys))
+    assert fk.ondelete == "CASCADE"
+
+
+def test_document_version_table_name() -> None:
+    """Verify the DocumentVersion model maps to 'document_versions'."""
+    assert DocumentVersion.__tablename__ == "document_versions"
+
+
+def test_document_version_document_fk_cascades() -> None:
+    """Verify DocumentVersion.document_id FK uses ON DELETE CASCADE."""
+    fk = next(iter(DocumentVersion.__table__.c.document_id.foreign_keys))
+    assert fk.ondelete == "CASCADE"
+
+
+def test_document_chunk_table_name() -> None:
+    """Verify the DocumentChunk model maps to 'document_chunks'."""
+    assert DocumentChunk.__tablename__ == "document_chunks"
+
+
+def test_document_chunk_has_embedding_column() -> None:
+    """Verify DocumentChunk has an embedding column."""
+    col_names = {c.name for c in DocumentChunk.__table__.columns}
+    assert "embedding" in col_names
+
+
+def test_document_chunk_version_fk_cascades() -> None:
+    """Verify DocumentChunk.document_version_id FK uses ON DELETE CASCADE."""
+    fk = next(iter(DocumentChunk.__table__.c.document_version_id.foreign_keys))
+    assert fk.ondelete == "CASCADE"
+
+
+# ---------------------------------------------------------------------------
+# Integration model tests
+# ---------------------------------------------------------------------------
+
+
+def test_integration_table_name() -> None:
+    """Verify the Integration model maps to 'integrations'."""
+    assert Integration.__tablename__ == "integrations"
+
+
+def test_integration_has_expected_columns() -> None:
+    """Verify Integration model declares all required columns."""
+    mapper = inspect(Integration)
+    column_names = {col.key for col in mapper.column_attrs}
+    expected = {
+        "id", "workspace_id", "type", "config",
+        "enabled", "created_at", "updated_at", "deleted_at",
+    }
+    assert expected.issubset(column_names)
+
+
+def test_integration_workspace_fk_cascades() -> None:
+    """Verify Integration.workspace_id FK uses ON DELETE CASCADE."""
+    fk = next(iter(Integration.__table__.c.workspace_id.foreign_keys))
+    assert fk.ondelete == "CASCADE"
+
+
+# ---------------------------------------------------------------------------
+# MemoryEntry model tests
+# ---------------------------------------------------------------------------
+
+
+def test_memory_entry_table_name() -> None:
+    """Verify the MemoryEntry model maps to 'memory_entries'."""
+    assert MemoryEntry.__tablename__ == "memory_entries"
+
+
+def test_memory_entry_has_expected_columns() -> None:
+    """Verify MemoryEntry model declares all required columns."""
+    mapper = inspect(MemoryEntry)
+    column_names = {col.key for col in mapper.column_attrs}
+    expected = {"id", "workspace_id", "user_id", "key", "content", "created_at"}
+    assert expected.issubset(column_names)
+
+
+def test_memory_entry_workspace_fk_cascades() -> None:
+    """Verify MemoryEntry.workspace_id FK uses ON DELETE CASCADE."""
+    fk = next(iter(MemoryEntry.__table__.c.workspace_id.foreign_keys))
+    assert fk.ondelete == "CASCADE"
+
+
+# ---------------------------------------------------------------------------
 # Metadata registration
 # ---------------------------------------------------------------------------
 
@@ -264,6 +370,7 @@ def test_all_models_registered_in_base_metadata() -> None:
     expected = {
         "users", "workspaces", "workspace_members",
         "projects", "conversations", "messages", "message_parts",
+        "documents", "document_versions", "document_chunks",
+        "integrations", "memory_entries",
     }
     assert expected.issubset(table_names)
-
