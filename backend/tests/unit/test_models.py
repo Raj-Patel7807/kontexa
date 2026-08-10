@@ -1,7 +1,10 @@
 """Unit tests for SQLAlchemy ORM models — structure and column validation."""
 
-from sqlalchemy import inspect
+from sqlalchemy import BigInteger, String, inspect
+from sqlalchemy.dialects.postgresql import JSONB
 
+from kontexa.database.models.ai import AIModel, AIProvider, AIUsage
+from kontexa.database.models.audit import AuditLog
 from kontexa.database.models.base import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
 from kontexa.database.models.conversations import Conversation
 from kontexa.database.models.documents import Document, DocumentChunk, DocumentVersion
@@ -9,6 +12,7 @@ from kontexa.database.models.integrations import Integration
 from kontexa.database.models.memory import MemoryEntry
 from kontexa.database.models.messages import Message, MessagePart
 from kontexa.database.models.projects import Project
+from kontexa.database.models.tools import AgentRun, Tool
 from kontexa.database.models.users import User
 from kontexa.database.models.workspaces import Workspace, WorkspaceMember
 from kontexa.database.session import Base
@@ -360,6 +364,155 @@ def test_memory_entry_workspace_fk_cascades() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Tool and AgentRun model tests
+# ---------------------------------------------------------------------------
+
+
+def test_tool_table_name() -> None:
+    """Verify the Tool model maps to 'tools'."""
+    assert Tool.__tablename__ == "tools"
+
+
+def test_tool_has_expected_columns() -> None:
+    """Verify Tool model declares all required columns."""
+    mapper = inspect(Tool)
+    column_names = {col.key for col in mapper.column_attrs}
+    expected = {"id", "project_id", "name", "config", "created_at"}
+    assert expected.issubset(column_names)
+
+
+def test_tool_project_fk_cascades() -> None:
+    """Verify Tool.project_id FK uses ON DELETE CASCADE."""
+    fk = next(iter(Tool.__table__.c.project_id.foreign_keys))
+    assert fk.ondelete == "CASCADE"
+
+
+def test_agent_run_table_name() -> None:
+    """Verify the AgentRun model maps to 'agent_runs'."""
+    assert AgentRun.__tablename__ == "agent_runs"
+
+
+def test_agent_run_has_expected_columns() -> None:
+    """Verify AgentRun model declares all required columns."""
+    mapper = inspect(AgentRun)
+    column_names = {col.key for col in mapper.column_attrs}
+    expected = {"id", "tool_id", "inputs", "outputs", "status", "started_at", "ended_at"}
+    assert expected.issubset(column_names)
+
+
+def test_agent_run_tool_fk_sets_null() -> None:
+    """Verify AgentRun.tool_id FK uses ON DELETE SET NULL."""
+    fk = next(iter(AgentRun.__table__.c.tool_id.foreign_keys))
+    assert fk.ondelete == "SET NULL"
+
+
+def test_agent_run_records_structured_input_and_output() -> None:
+    """Verify executions retain structured data needed to reproduce a run."""
+    assert isinstance(AgentRun.__table__.c.inputs.type, JSONB)
+    assert isinstance(AgentRun.__table__.c.outputs.type, JSONB)
+    assert AgentRun.__table__.c.status.type.length == 20
+    assert {index.name for index in AgentRun.__table__.indexes} == {"idx_agent_runs_tool"}
+
+
+# ---------------------------------------------------------------------------
+# AI models tests
+# ---------------------------------------------------------------------------
+
+
+def test_ai_provider_table_name() -> None:
+    """Verify the AIProvider model maps to 'ai_providers'."""
+    assert AIProvider.__tablename__ == "ai_providers"
+
+
+def test_ai_provider_name_is_unique() -> None:
+    """Verify AIProvider.name column has a unique constraint."""
+    assert AIProvider.__table__.c.name.unique is True
+
+
+def test_ai_model_table_name() -> None:
+    """Verify the AIModel model maps to 'ai_models'."""
+    assert AIModel.__tablename__ == "ai_models"
+
+
+def test_ai_model_provider_fk_cascades() -> None:
+    """Verify AIModel.provider_id FK uses ON DELETE CASCADE."""
+    fk = next(iter(AIModel.__table__.c.provider_id.foreign_keys))
+    assert fk.ondelete == "CASCADE"
+
+
+def test_ai_provider_and_model_keep_provider_configuration_and_lookup_index() -> None:
+    """Verify providers retain structured configuration and models remain provider-queryable."""
+    assert isinstance(AIProvider.__table__.c.config.type, JSONB)
+    assert {index.name for index in AIModel.__table__.indexes} == {"idx_ai_models_provider"}
+
+
+def test_ai_usage_table_name() -> None:
+    """Verify the AIUsage model maps to 'ai_usage'."""
+    assert AIUsage.__tablename__ == "ai_usage"
+
+
+def test_ai_usage_has_expected_columns() -> None:
+    """Verify AIUsage model declares all required columns."""
+    mapper = inspect(AIUsage)
+    column_names = {col.key for col in mapper.column_attrs}
+    expected = {
+        "id", "user_id", "model_id", "workspace_id",
+        "tokens_used", "cost_cents", "timestamp",
+    }
+    assert expected.issubset(column_names)
+
+
+def test_ai_usage_foreign_keys_preserve_usage_history_semantics() -> None:
+    """Verify model deletion removes usage while user deletion only anonymizes it."""
+    user_fk = next(iter(AIUsage.__table__.c.user_id.foreign_keys))
+    model_fk = next(iter(AIUsage.__table__.c.model_id.foreign_keys))
+    workspace_fk = next(iter(AIUsage.__table__.c.workspace_id.foreign_keys))
+    assert user_fk.ondelete == "SET NULL"
+    assert model_fk.ondelete == "CASCADE"
+    assert workspace_fk.ondelete == "CASCADE"
+
+
+def test_ai_usage_counts_and_costs_use_large_integer_columns() -> None:
+    """Verify usage counters do not overflow during long-running workspace reporting."""
+    assert isinstance(AIUsage.__table__.c.tokens_used.type, BigInteger)
+    assert isinstance(AIUsage.__table__.c.cost_cents.type, BigInteger)
+    assert {index.name for index in AIUsage.__table__.indexes} == {"idx_ai_usage_model"}
+
+
+# ---------------------------------------------------------------------------
+# AuditLog model tests
+# ---------------------------------------------------------------------------
+
+
+def test_audit_log_table_name() -> None:
+    """Verify the AuditLog model maps to 'audit_logs'."""
+    assert AuditLog.__tablename__ == "audit_logs"
+
+
+def test_audit_log_has_expected_columns() -> None:
+    """Verify AuditLog model declares all required columns."""
+    mapper = inspect(AuditLog)
+    column_names = {col.key for col in mapper.column_attrs}
+    expected = {
+        "id", "workspace_id", "user_id", "action",
+        "table_name", "record_id", "changes", "created_at",
+    }
+    assert expected.issubset(column_names)
+
+
+def test_audit_log_uses_append_only_identifier_and_structured_changes() -> None:
+    """Verify audit records use scalable identifiers and retain structured change details."""
+    assert isinstance(AuditLog.__table__.c.id.type, BigInteger)
+    assert AuditLog.__table__.c.id.primary_key is True
+    assert isinstance(AuditLog.__table__.c.changes.type, JSONB)
+    assert isinstance(AuditLog.__table__.c.action.type, String)
+    assert {index.name for index in AuditLog.__table__.indexes} == {
+        "idx_audit_time",
+        "idx_audit_workspace",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Metadata registration
 # ---------------------------------------------------------------------------
 
@@ -372,5 +525,8 @@ def test_all_models_registered_in_base_metadata() -> None:
         "projects", "conversations", "messages", "message_parts",
         "documents", "document_versions", "document_chunks",
         "integrations", "memory_entries",
+        "tools", "agent_runs",
+        "ai_providers", "ai_models", "ai_usage",
+        "audit_logs",
     }
     assert expected.issubset(table_names)
