@@ -152,8 +152,15 @@ def test_project_has_expected_columns() -> None:
     mapper = inspect(Project)
     column_names = {col.key for col in mapper.column_attrs}
     expected = {
-        "id", "workspace_id", "name", "slug", "description",
-        "status", "created_at", "updated_at", "deleted_at",
+        "id",
+        "workspace_id",
+        "name",
+        "slug",
+        "description",
+        "status",
+        "created_at",
+        "updated_at",
+        "deleted_at",
     }
     assert expected.issubset(column_names)
 
@@ -185,8 +192,15 @@ def test_conversation_has_expected_columns() -> None:
     mapper = inspect(Conversation)
     column_names = {col.key for col in mapper.column_attrs}
     expected = {
-        "id", "workspace_id", "project_id", "title",
-        "is_active", "metadata_", "created_at", "updated_at", "deleted_at",
+        "id",
+        "workspace_id",
+        "project_id",
+        "title",
+        "is_active",
+        "metadata_",
+        "created_at",
+        "updated_at",
+        "deleted_at",
     }
     assert expected.issubset(column_names)
 
@@ -218,8 +232,13 @@ def test_message_has_expected_columns() -> None:
     mapper = inspect(Message)
     column_names = {col.key for col in mapper.column_attrs}
     expected = {
-        "id", "conversation_id", "user_id", "content",
-        "metadata_", "created_at", "updated_at",
+        "id",
+        "conversation_id",
+        "user_id",
+        "content",
+        "metadata_",
+        "created_at",
+        "updated_at",
     }
     assert expected.issubset(column_names)
 
@@ -327,8 +346,14 @@ def test_integration_has_expected_columns() -> None:
     mapper = inspect(Integration)
     column_names = {col.key for col in mapper.column_attrs}
     expected = {
-        "id", "workspace_id", "type", "config",
-        "enabled", "created_at", "updated_at", "deleted_at",
+        "id",
+        "workspace_id",
+        "type",
+        "config",
+        "enabled",
+        "created_at",
+        "updated_at",
+        "deleted_at",
     }
     assert expected.issubset(column_names)
 
@@ -456,8 +481,13 @@ def test_ai_usage_has_expected_columns() -> None:
     mapper = inspect(AIUsage)
     column_names = {col.key for col in mapper.column_attrs}
     expected = {
-        "id", "user_id", "model_id", "workspace_id",
-        "tokens_used", "cost_cents", "timestamp",
+        "id",
+        "user_id",
+        "model_id",
+        "workspace_id",
+        "tokens_used",
+        "cost_cents",
+        "timestamp",
     }
     assert expected.issubset(column_names)
 
@@ -494,8 +524,14 @@ def test_audit_log_has_expected_columns() -> None:
     mapper = inspect(AuditLog)
     column_names = {col.key for col in mapper.column_attrs}
     expected = {
-        "id", "workspace_id", "user_id", "action",
-        "table_name", "record_id", "changes", "created_at",
+        "id",
+        "workspace_id",
+        "user_id",
+        "action",
+        "table_name",
+        "record_id",
+        "changes",
+        "created_at",
     }
     assert expected.issubset(column_names)
 
@@ -521,12 +557,23 @@ def test_all_models_registered_in_base_metadata() -> None:
     """Verify all models are registered in Base.metadata.tables."""
     table_names = set(Base.metadata.tables.keys())
     expected = {
-        "users", "workspaces", "workspace_members",
-        "projects", "conversations", "messages", "message_parts",
-        "documents", "document_versions", "document_chunks",
-        "integrations", "memory_entries",
-        "tools", "agent_runs",
-        "ai_providers", "ai_models", "ai_usage",
+        "users",
+        "workspaces",
+        "workspace_members",
+        "projects",
+        "conversations",
+        "messages",
+        "message_parts",
+        "documents",
+        "document_versions",
+        "document_chunks",
+        "integrations",
+        "memory_entries",
+        "tools",
+        "agent_runs",
+        "ai_providers",
+        "ai_models",
+        "ai_usage",
         "audit_logs",
     }
     assert expected.issubset(table_names)

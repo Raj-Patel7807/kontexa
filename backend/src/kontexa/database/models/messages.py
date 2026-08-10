@@ -27,9 +27,7 @@ class Message(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=True,
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    metadata_: Mapped[dict | None] = mapped_column(
-        "metadata", JSONB, nullable=True, default=None
-    )
+    metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True, default=None)
 
 
 class MessagePart(UUIDPrimaryKeyMixin, Base):

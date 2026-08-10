@@ -62,12 +62,8 @@ class AIUsage(UUIDPrimaryKeyMixin, Base):
         ForeignKey("workspaces.id", ondelete="CASCADE"),
         nullable=False,
     )
-    tokens_used: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, server_default=text("0")
-    )
-    cost_cents: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, server_default=text("0")
-    )
+    tokens_used: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("0"))
+    cost_cents: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("0"))
     timestamp: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")
     )

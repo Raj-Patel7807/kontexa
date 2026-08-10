@@ -16,9 +16,7 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "conversations"
     __table_args__ = (
         Index("idx_conversations_workspace", "workspace_id"),
-        Index(
-            "idx_conversations_deleted", "deleted_at", postgresql_where="deleted_at IS NULL"
-        ),
+        Index("idx_conversations_deleted", "deleted_at", postgresql_where="deleted_at IS NULL"),
     )
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(
@@ -33,6 +31,4 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     title: Mapped[str | None] = mapped_column(String, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    metadata_: Mapped[dict | None] = mapped_column(
-        "metadata", JSONB, nullable=True, default=None
-    )
+    metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True, default=None)

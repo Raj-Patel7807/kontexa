@@ -26,9 +26,7 @@ class Document(UUIDPrimaryKeyMixin, Base):
         nullable=False,
     )
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
-    metadata_: Mapped[dict | None] = mapped_column(
-        "metadata", JSONB, nullable=True, default=None
-    )
+    metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")
     )
@@ -54,9 +52,7 @@ class DocumentChunk(UUIDPrimaryKeyMixin, Base):
     """A text chunk of a document version with an embedding vector for similarity search."""
 
     __tablename__ = "document_chunks"
-    __table_args__ = (
-        Index("idx_chunks_doc_version", "document_version_id"),
-    )
+    __table_args__ = (Index("idx_chunks_doc_version", "document_version_id"),)
 
     document_version_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

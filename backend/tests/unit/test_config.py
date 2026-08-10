@@ -2,6 +2,7 @@
 
 import tempfile
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from kontexa.core.config import Settings
 
@@ -57,20 +58,45 @@ def test_database_ssl_context_is_none_when_cert_path_does_not_exist() -> None:
 
 
 def test_database_ssl_context_is_created_when_valid_cert_exists() -> None:
-    """Verify SSL context is created when a valid CA certificate file path is given."""
-    # Create a temporary self-signed CA-like PEM for testing
-    with tempfile.NamedTemporaryFile(suffix=".pem", delete=False, mode="w") as f:
-        # Minimal PEM content is not valid for real SSL, but we can test
-        # that the path resolution works. Use a real cert for full validation.
-        cert_path = f.name
+    """Verify a configured certificate path is passed to SSL context construction."""
+    with tempfile.NamedTemporaryFile(suffix=".pem", delete=False, mode="w") as file:
+        cert_path = file.name
 
-    # The file exists, so the method should attempt to create an SSL context.
-    # With an invalid PEM, ssl.create_default_context raises an error,
-    # so we verify path existence separately.
-    assert Path(cert_path).exists()
+    context = Mock()
+    try:
+        with patch(
+            "kontexa.core.config.ssl.create_default_context", return_value=context
+        ) as create:
+            settings = Settings(
+                _env_file=None,
+                database_url="postgresql+asyncpg://test:test@localhost:5432/test_db",
+                database_ca_cert=cert_path,
+                database_ssl_mode="require",
+            )
+            assert settings.database_connect_args == {"ssl": context}
+            create.assert_called_once_with(cafile=cert_path)
+    finally:
+        Path(cert_path).unlink(missing_ok=True)
 
-    # Clean up
-    Path(cert_path).unlink(missing_ok=True)
+
+def test_database_connect_args_enable_tls_without_a_ca_certificate() -> None:
+    """Verify Aiven connections remain encrypted when a CA path is supplied separately."""
+    settings = Settings(
+        _env_file=None,
+        database_url="postgresql+asyncpg://test:test@localhost:5432/test_db",
+        database_ssl_mode="require",
+    )
+    assert settings.database_connect_args == {"ssl": True}
+
+
+def test_database_connect_args_disable_tls_for_local_development() -> None:
+    """Verify local Docker PostgreSQL does not receive unsupported TLS arguments."""
+    settings = Settings(
+        _env_file=None,
+        database_url="postgresql+asyncpg://test:test@localhost:5432/test_db",
+        database_ssl_mode="disable",
+    )
+    assert settings.database_connect_args == {}
 
 
 def test_database_pool_size_is_configurable() -> None:

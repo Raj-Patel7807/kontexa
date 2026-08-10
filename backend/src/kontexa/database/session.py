@@ -7,16 +7,6 @@ from sqlalchemy.orm import DeclarativeBase
 
 from kontexa.core.config import settings
 
-
-def _build_connect_args() -> dict:
-    """Build SSL connection arguments for asyncpg when a CA certificate is configured."""
-    connect_args: dict = {}
-    ssl_ctx = settings.database_ssl_context
-    if ssl_ctx is not None:
-        connect_args["ssl"] = ssl_ctx
-    return connect_args
-
-
 # Asynchronous database engine
 engine = create_async_engine(
     settings.database_url,
@@ -24,7 +14,7 @@ engine = create_async_engine(
     future=True,
     pool_size=settings.database_pool_size,
     max_overflow=settings.database_max_overflow,
-    connect_args=_build_connect_args(),
+    connect_args=settings.database_connect_args,
 )
 
 # Async session factory

@@ -2,6 +2,7 @@
 
 import ssl
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -39,6 +40,10 @@ class Settings(BaseSettings):
     database_ca_cert: str | None = Field(
         default=None,
         description="Absolute path to the CA certificate for SSL database connections (Aiven)",
+    )
+    database_ssl_mode: Literal["disable", "require"] = Field(
+        default="disable",
+        description="TLS mode for database connections; use require for Aiven",
     )
 
     redis_url: str = Field(
@@ -79,6 +84,17 @@ class Settings(BaseSettings):
 
         ctx = ssl.create_default_context(cafile=str(ca_path))
         return ctx
+
+    @property
+    def database_connect_args(self) -> dict[str, ssl.SSLContext | bool]:
+        """Build asyncpg connection arguments for the configured TLS mode."""
+        if self.database_ssl_mode == "disable":
+            return {}
+
+        ssl_context = self.database_ssl_context
+        if ssl_context is not None:
+            return {"ssl": ssl_context}
+        return {"ssl": True}
 
 
 settings = Settings()
