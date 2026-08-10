@@ -2,13 +2,22 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   backend-ci:
+    name: Backend CI
     uses: ./.github/workflows/backend.yml
 
   frontend-ci:
+    name: Frontend CI
     uses: ./.github/workflows/frontend.yml

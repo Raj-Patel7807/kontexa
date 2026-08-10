@@ -7,9 +7,16 @@ on:
   # pull_request:
   #   branches: [ main ]
 
+permissions:
+  contents: read
+
 jobs:
   backend-checks:
+    name: Backend Checks
     runs-on: ubuntu-latest
+
+    timeout-minutes: 10
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,21 +32,17 @@ jobs:
           enable-cache: true
 
       - name: Install backend dependencies
-        run: |
-          cd backend
-          uv sync
+        working-directory: backend
+        run: uv sync --locked
 
-      - name: Run Ruff Linter
-        run: |
-          cd backend
-          uv run ruff check .
+      - name: Run Ruff linter
+        working-directory: backend
+        run: uv run ruff check .
 
-      - name: Run Ruff Formatter Check
-        run: |
-          cd backend
-          uv run ruff format --check .
+      - name: Run Ruff formatter check
+        working-directory: backend
+        run: uv run ruff format --check .
 
-      - name: Run Pytest Test Suite
-        run: |
-          cd backend
-          uv run pytest
+      - name: Run Pytest
+        working-directory: backend
+        run: uv run pytest
