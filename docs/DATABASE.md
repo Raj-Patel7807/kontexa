@@ -1,919 +1,823 @@
 # Executive Summary
 
-Kontexa is a cloud-based SaaS platform for team collaboration with AI-assisted development tools. Its data model includes **multi-tenant workspaces/projects**, **user and conversation data**, **documents for retrieval-augmented generation (RAG)** (with vector embeddings), and **auditing/memory/tool-usage logs**. We propose a PostgreSQL schema that supports robust **multi-tenancy**, **pgvector integration**, and **enterprise-grade practices** (soft-deletes, UUID keys, timestamps, JSONB metadata, etc.). 
+For **Kontexa** we recommend a modern PostgreSQL-based architecture with tight multi-tenancy and vector search support.  We use one **shared database** (pool model) with every table tagged by `workspace_id`, and enforce isolation via policy (e.g. Row-Level Security).  All data (users, workspaces, projects, conversations, messages, documents, etc.) lives in PostgreSQL, with vector embeddings stored in a `VECTOR` column (via the [pgvector](https://github.com/pgvector/pgvector) extension).  This keeps relational and semantic data together, enabling “hybrid” queries (structured + similarity) in one system.  
 
-This design uses a *“pooled” multi-tenant model*, where each row has a `workspace_id` or `project_id` to identify its tenant. Row-Level Security (RLS) can be enabled later to enforce isolation at the database level. All tables use UUID primary keys (via `uuid_generate_v4()`) and `TIMESTAMPTZ` timestamps with sensible defaults. Vector embeddings (for documents, memory) use the `pgvector` extension (configured once via `CREATE EXTENSION vector;`). We will index text and JSONB fields with B-tree/GIN and vectors with HNSW/IVFFlat as appropriate.
+We adopt **UUID primary keys**, `timestamptz` timestamps, soft-delete (`deleted_at`) flags with partial indexes, and JSONB for flexible fields.  Heavy tables (e.g. chat messages, embeddings) can be range-partitioned by time or tenant to speed queries and allow easy archival.  For example, old partitions can be dropped in bulk instead of slow `DELETE`s.  We add appropriate indexes: B-tree for FKs and queries, GIN for JSONB content, and `USING ivfflat(...)` or `USING hnsw(...)` for the vector columns.  
 
-The SQL DDL and Alembic migrations below show how to implement this schema. We also provide SQLAlchemy model examples (using `AsyncSession`) and recommended deployment options. **Modern managed Postgres providers (Railway, Neon, Supabase, Render, AWS RDS, etc.) all offer pgvector and features like high-availability and PITR.** We compare cost and features in tables. Finally, we cover backups, monitoring, security (e.g. TLS and rotated secrets), testing (Docker Compose + Pytest), and a step-by-step agent checklist. All guidance is up-to-date (2026) and sourced from official docs and experts.
+In the short term (MVP), we’ll use a **managed Postgres** provider to minimize ops overhead.  Viable free-tier/low-cost options in 2026 include **Neon** (serverless Postgres, 100 CU-hours + 0.5 GiB free, includes time-travel/PITR), **Supabase** (500 MB free, free PITR backup), **Aiven** (free 1 GB, auto-backups), or **Timescale/TigerData** (750 MB free, includes pgvector).  We’ll run the FastAPI backend on a simple Docker container (or Railway), and front-end on Vercel with HTTPS.
 
----
+Operationally, we enable automated backups/PITR (most providers include it), monitor with `pg_stat_statements` and PgBouncer as needed, and schedule regular VACUUM/REINDEX.  Soft-deleted or aged data beyond retention windows can be purged via scheduled jobs or by dropping old partitions.  We enforce security best practices: encrypted connections, least-privileged DB roles, secrets in vault/ENV, and RLS policies to filter out other tenants’ data.  
 
-## Database Design
+The attached sections include: 
 
-### Multi-Tenancy Model
+- **`DATABASE.md`** – database philosophy, entity list, ER diagram (Mermaid), and rationale.  
+- **`docs/roadmap/01-database.md`** – step-by-step implementation plan for an AI agent.  
+- **`DDL.sql`** – SQL DDL to create tables, indexes, extensions, with partitioning example.  
+- **SQLAlchemy Models & Alembic** – sample ORM class snippets and migration outline.  
+- **Deployment** – local (Docker Compose) and cloud options, architecture diagram (Mermaid), connection string examples.  
+- **Scaling & Operations** – backup/PITR, VACUUM/reindex, partition archiving, etc.  
+- **Security Checklist** – roles, RLS, encryption, etc.  
+- **Testing & Acceptance Criteria** – key tests and validation.  
+- **Agent Tasks** – explicit to-do commands for an AI coder.
 
-We use a **shared (“pool”) tenancy model**: all data lives in the same database, and every row includes a `workspace_id` (and/or `project_id`) foreign key. The application ensures filtering by workspace. Optionally, Row-Level Security (RLS) can be enabled on each table (`ALTER TABLE ... ENABLE ROW LEVEL SECURITY`) so that only the owning tenant can see or modify its rows. RLS centralizes isolation enforcement in the database and eliminates reliance on application logic for each query.
+All recommendations are drawn from current Postgres best practices and recent sources.
 
-> **Row-Level Security (RLS):** By enabling RLS policies on tables, the DB can automatically restrict rows to the current tenant (e.g. `WHERE workspace_id = current_setting('app.current_workspace')::UUID`). This reduces cross-tenant leakage risk. RLS is optional but recommended for production SaaS.
+# DATABASE.md
 
-All tables reference a `workspaces` (tenant) table. Key approaches:
-- **Pool model:** one database, one schema, add `workspace_id` to every table. Lower cost than separate DB per tenant.
-- **Schema-per-tenant:** not used here, too complex for dynamic tenants.
-- **DB-per-tenant:** too expensive for many teams (we keep a single DB).
+## Philosophy
 
-We require each row’s `workspace_id` (and `project_id` if relevant) to maintain tenant boundaries. In some tables, there’s also a `user_id` to link to the owning user (for user-created content, sessions, etc.).
+- **Shared Database, Pool Model** – We use a single PostgreSQL database for all tenants (workspaces). Every table includes a `workspace_id` (UUID FK) to mark its tenant. This “pool” approach minimizes resource overhead.  We enforce data isolation centrally via database policies (see RLS below) rather than relying on app logic alone.  
 
-### Entity-Relationship Diagram
+- **Multi-Tenancy Isolation** – All queries filter by workspace. E.g. every table (users, projects, messages, etc.) has `workspace_id NOT NULL`. Optionally, enable [Row-Level Security](https://www.postgresql.org/docs/current/ddl-rowsecurity.html) with a policy like `USING (workspace_id = current_setting('app.current_workspace')::uuid)` to automatically hide other tenants’ rows. This assures no cross-tenant leaks.  
 
-Below is a simplified ER diagram (Mermaid) of the core tables.  Each table’s name is followed by its key columns.  Lines indicate foreign keys.
+- **UUID Primary Keys** – Use `UUID` (v4) as default PKs with `gen_random_uuid()` (or `uuid_generate_v4()`) default. This avoids guessable IDs and scales better in distributed systems. (E.g. `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`.)  
+
+- **Timestamps & Soft Deletes** – All tables have `created_at TIMESTAMPTZ DEFAULT NOW()`, `updated_at TIMESTAMPTZ DEFAULT NOW()`, and a nullable `deleted_at TIMESTAMPTZ`.  Rows are “soft-deleted” by setting `deleted_at`; queries include `WHERE deleted_at IS NULL`.  We index on this column (e.g. `CREATE INDEX idx_X_deleted ON X(deleted_at) WHERE deleted_at IS NULL`) to speed active-row queries.  Optionally, RLS policies can also hide soft-deleted rows.  
+
+- **JSONB for Flexibility** – Some columns store semi-structured data (e.g. `metadata JSONB`, integration configs, webhooks, etc.).  Use PostgreSQL’s `JSONB` type for these.  Add **GIN indexes** on JSONB when needed to accelerate key/value queries. For example, if searching by `metadata->>'key'`, use `CREATE INDEX ON table USING GIN (metadata)` or an expression index on `metadata->'key'`.  
+
+- **Vector Search with pgvector** – We include the `vector` extension to store embedding vectors (e.g. for document chunks).   This means we can perform ANN (Approximate Nearest Neighbor) queries right in SQL.  For each table with embeddings, we create an index: typically `USING ivfflat` for an initial rollout.  Example:  
+  ```sql
+  CREATE INDEX ON document_chunks
+    USING ivfflat (embedding vector_l2_ops)
+    WITH (lists = 100);
+  ```  
+  (This uses L2 distance; for cosine or inner-product, use `vector_cosine_ops` or `vector_ip_ops`.)  Later, we may benchmark HNSW indexes for performance.  In queries, always filter by workspace (or other structured conditions) *before* the vector search (“hybrid retrieval”) to reduce the candidate set.  
+
+- **Partitioning & Archival** – Very large tables (like chat messages or logs) should be *partitioned*.  For instance, partition `messages` or `audit_logs` by **date range** or by workspace (list partition) if applicable.  This way older partitions can be dropped or moved cheaply.  Dropping a partition (or detaching it) is far faster than a DELETE and avoids heavy vacuum costs.  As an example:  
+  ```sql
+  CREATE TABLE messages (
+    ... common columns ...
+    created_at TIMESTAMPTZ NOT NULL,
+    ...
+  ) PARTITION BY RANGE (created_at);
+
+  CREATE TABLE messages_2026_08 PARTITION OF messages
+    FOR VALUES FROM ('2026-08-01') TO ('2026-09-01');
+  ```  
+  We pick a partition key aligned with query patterns (often date or workspace).  Stale data (e.g. older than N months) can then be purged by dropping partitions or running archival jobs.
+
+## Data Model & ER Diagram
+
+Below is the high-level schema. Every table’s `workspace_id` FK ties data to a tenant. The ER diagram (Mermaid) highlights relationships:
 
 ```mermaid
 erDiagram
-    USERS ||--o{ WORKSPACES : owns
-    USERS ||--o{ WORKSPACE_MEMBERS : 
-    WORKSPACES ||--o{ WORKSPACE_MEMBERS : 
-    WORKSPACES ||--o{ PROJECTS : 
-    WORKSPACE_MEMBERS ||--|| USERS : 
-    WORKSPACE_MEMBERS ||--|| WORKSPACES : 
-    PROJECTS ||--o{ CONVERSATIONS : 
-    PROJECTS ||--o{ DOCUMENTS : 
-    CONVERSATIONS ||--o{ MESSAGES : 
-    MESSAGES ||--o{ MESSAGE_PARTS : 
-    DOCUMENTS ||--o{ DOCUMENT_VERSIONS : 
-    DOCUMENT_VERSIONS ||--o{ DOCUMENT_CHUNKS : 
-    DOCUMENT_CHUNKS ||--o{ MEMORY_ENTRIES : 
-    PROJECTS ||--o{ TASKS : 
-    PROJECTS ||--o{ TOOL_EXECUTIONS : 
-    CONVERSATIONS ||--o{ TOOL_EXECUTIONS : 
-    USERS ||--o{ OAUTH_ACCOUNTS : 
-    WORKSPACES ||--o{ INTEGRATIONS : 
-    INTEGRATIONS ||--o{ DOCUMENTS : 
-    PROJECTS ||--o{ GITHUB_CONNECTIONS : 
-    GITHUB_CONNECTIONS ||--o{ GITHUB_REPOSITORIES : 
-    GITHUB_REPOSITORIES ||--o{ GITHUB_COMMITS : 
-    GITHUB_REPOSITORIES ||--o{ GITHUB_PULL_REQUESTS : 
-    PROJECTS ||--o{ AUDIT_LOGS : 
-    WORKSPACES ||--o{ AUDIT_LOGS : 
-    USERS ||--o{ AUDIT_LOGS : 
+    USERS {
+      UUID id PK
+      text email
+      text name
+      bool is_active
+      timestamptz created_at
+    }
+    WORKSPACES {
+      UUID id PK
+      text name
+      text slug
+      timestamptz created_at
+    }
+    WORKSPACE_MEMBERS {
+      UUID workspace_id FK
+      UUID user_id FK
+      text role
+    }
+    PROJECTS {
+      UUID id PK
+      UUID workspace_id FK
+      text name
+      text slug
+      text status
+      timestamptz created_at
+    }
+    CONVERSATIONS {
+      UUID id PK
+      UUID workspace_id FK
+      UUID project_id FK
+      text title
+      bool is_active
+      timestamptz created_at
+    }
+    MESSAGES {
+      UUID id PK
+      UUID conversation_id FK
+      UUID user_id FK
+      text content
+      jsonb metadata
+      timestamptz created_at
+    }
+    MESSAGE_PARTS {
+      UUID id PK
+      UUID message_id FK
+      int part_index
+      text content
+      varchar mime_type
+    }
+    INTEGRATIONS {
+      UUID id PK
+      UUID workspace_id FK
+      varchar type
+      jsonb config
+      bool enabled
+      timestamptz created_at
+    }
+    DOCUMENTS {
+      UUID id PK
+      UUID project_id FK
+      text title
+      jsonb metadata
+      timestamptz created_at
+    }
+    DOCUMENT_VERSIONS {
+      UUID id PK
+      UUID document_id FK
+      text content
+      timestamptz created_at
+    }
+    DOCUMENT_CHUNKS {
+      UUID id PK
+      UUID document_version_id FK
+      int chunk_index
+      text content
+      vector embedding
+      timestamptz created_at
+    }
+    MEMORY_ENTRIES {
+      UUID id PK
+      UUID workspace_id FK
+      UUID user_id FK
+      text key
+      text content
+      timestamptz created_at
+    }
+    TOOLS {
+      UUID id PK
+      UUID project_id FK
+      text name
+      jsonb config
+      timestamptz created_at
+    }
+    AGENT_RUNS {
+      UUID id PK
+      UUID tool_id FK
+      jsonb inputs
+      jsonb outputs
+      varchar status
+      timestamptz started_at
+      timestamptz ended_at
+    }
+    AI_PROVIDERS {
+      UUID id PK
+      text name
+      jsonb config
+      timestamptz created_at
+    }
+    AI_MODELS {
+      UUID id PK
+      UUID provider_id FK
+      text model_name
+      timestamptz created_at
+    }
+    AI_USAGE {
+      UUID id PK
+      UUID user_id FK
+      UUID model_id FK
+      UUID workspace_id FK
+      int tokens_used
+      int cost_cents
+      timestamptz timestamp
+    }
+    AUDIT_LOGS {
+      BIGSERIAL id PK
+      UUID workspace_id
+      text action
+      text table_name
+      UUID record_id
+      jsonb changes
+      timestamptz created_at
+    }
+
+    USERS ||--o{ WORKSPACE_MEMBERS : "member of"
+    WORKSPACES ||--o{ WORKSPACE_MEMBERS : "has user"
+    WORKSPACES ||--o{ PROJECTS : "owns"
+    WORKSPACES ||--o{ CONVERSATIONS : "contains"
+    WORKSPACES ||--o{ INTEGRATIONS : "configures"
+    WORKSPACES ||--o{ MEMORY_ENTRIES : "stores"
+    WORKSPACES ||--o{ AUDIT_LOGS : "records"
+    PROJECTS ||--o{ CONVERSATIONS : "includes"
+    PROJECTS ||--o{ DOCUMENTS : "contains"
+    PROJECTS ||--o{ TOOLS : "defines"
+    CONVERSATIONS ||--o{ MESSAGES : "holds"
+    MESSAGES ||--o{ MESSAGE_PARTS : "split into"
+    DOCUMENTS ||--o{ DOCUMENT_VERSIONS : "versions"
+    DOCUMENT_VERSIONS ||--o{ DOCUMENT_CHUNKS : "chunks"
+    TOOLS ||--o{ AGENT_RUNS : "executes"
+    AI_PROVIDERS ||--o{ AI_MODELS : "provides"
+    AI_MODELS ||--o{ AI_USAGE : "logged by"
 ```
 
-**Key entities:** 
+### Key Tables
 
-- **workspaces:** Tenant or team container.  
-- **users:** Application users (joined to workspaces via `workspace_members`).  
-- **projects:** Projects within workspaces.  
-- **conversations, messages, message_parts:** Chat history (threaded).  
-- **documents/document_versions/chunks:** RAG content from GitHub/Uploads, etc., broken into chunks with embeddings.  
-- **memory_entries:** Stored embeddings/memories (semantic/episodic).  
-- **tools/tool_executions:** Records of agent/tool actions.  
-- **audit_logs:** System events.  
-- **oauth_accounts/github_*:** (Optional) integration credentials and GitHub data for connected repos.
+- **`users`**: Global user accounts.  Columns: `id` (UUID PK), `email` (unique), `name`, `is_active` (soft-delete flag), plus timestamps.  We index on `(deleted_at IS NULL)` to find active users quickly.
+- **`workspaces`**: Tenant organizations. Columns: `id`, `name`, `slug` (unique per tenant), etc.  A `workspace` may have many users and projects.
+- **`workspace_members`**: Link table (many-to-many) between users and workspaces, with a role (admin/member).  
+- **`projects`**: Projects under a workspace. Contains `workspace_id`, `name`, `slug` (unique within workspace), `status` (e.g. active/archived), etc. Unique index on `(workspace_id, slug)`.
+- **Chat (`conversations`,`messages`,`message_parts`)**:  
+  - `conversations`: Per-workspace and optional project. Columns: `id`, `workspace_id`, `project_id`, `title`, `is_active`, timestamps.  
+  - `messages`: Linked to a conversation. Columns: `id`, `conversation_id`, `user_id` (sender), `content`, `metadata` (JSONB), timestamps.  Index on `conversation_id`.  
+  - `message_parts`: In case large messages are chunked. Each part has `id`, `message_id`, `part_index`, `content`, `mime_type`, timestamp.  
 
-Each table includes `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`, `updated_at TIMESTAMPTZ`, and often a `deleted_at TIMESTAMPTZ` for soft-deletes. UUIDs (`uuid` type) are used for IDs, defaulting to `uuid_generate_v4()`.
+- **`integrations`**: Stores external connector configs (GitHub, Slack, Jira, etc.). Fields: `workspace_id`, `type` (e.g. ‘github’), `config` (JSONB for tokens/settings), `enabled` flag, timestamps. The actual data fetched from these services is not mirrored entirely; instead, relevant documents (below) are stored.  
 
-### Table Schema (logical)
+- **RAG (Documents)**:  
+  - `documents`: High-level records (e.g. a Notion page, GitHub PR, Slack thread) in a project. Contains `project_id`, `title`, `metadata` (JSONB), etc.  
+  - `document_versions`: If documents can update (e.g. new versions of a file), this table holds each version’s content.  
+  - `document_chunks`: Each version is split into chunks. Columns: `document_version_id`, `chunk_index`, `content` (text) and `embedding VECTOR`. We add a vector index here.  
 
-Below is the **logical schema** summary. For brevity we list each table with columns and constraints. All `id` columns are `UUID PRIMARY KEY DEFAULT uuid_generate_v4()`. `created_at`/`updated_at` are `TIMESTAMPTZ DEFAULT now()`. Foreign keys reference parent tables with `ON DELETE CASCADE` or `RESTRICT` as noted.
+- **`memory_entries`**: (Optional) For long-term agent memory. Columns: `workspace_id`, `user_id`, `key` (topic), `content`, `created_at`. Indexed on `workspace_id`.  
 
-- **users**: Authentication data.  
-  - `id UUID PK`  
-  - `email TEXT UNIQUE NOT NULL`, `password_hash TEXT`, `name TEXT`, `avatar_url TEXT`,  
-  - `is_active BOOLEAN DEFAULT true`, `is_verified BOOLEAN DEFAULT false`,  
-  - `last_login_at TIMESTAMPTZ`, `created_at`, `updated_at`.  
-  - *(Consider encryption for `password_hash` and `access tokens` – see Security.)*
+- **Tools & Agents**:  
+  - `tools`: Custom actions or tools defined per project (e.g. web search, code executor). Fields: `project_id`, `name`, `config` (JSONB for tool parameters).  
+  - `agent_runs`: Each invocation of a tool or an AI agent. Fields: `tool_id`, `inputs` (JSONB), `outputs` (JSONB), `status`, start/end timestamps.  
 
-- **workspaces**: Team/tenant.  
-  - `id UUID PK`  
-  - `owner_id UUID REFERENCES users(id) ON DELETE SET NULL`,  
-  - `name TEXT NOT NULL`, `slug TEXT UNIQUE NOT NULL`, `description TEXT`,  
-  - `created_at`, `updated_at`.
+- **AI Metadata**:  
+  - `ai_providers`: Registered AI providers (e.g. OpenAI, Anthropic). Columns: `name`, `config` (API keys or settings).  
+  - `ai_models`: Supported models under each provider. Columns: `provider_id`, `model_name` (e.g. `gpt-4`), `max_tokens`, etc.  
+  - `ai_usage`: Logs of API usage. Columns: `user_id`, `workspace_id`, `model_id`, `tokens_used`, `cost_cents`, `timestamp`. Index on `model_id` for aggregation.  
 
-- **workspace_members**: M2M linking users to workspaces.  
-  - `id UUID PK`  
-  - `workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE`,  
-  - `user_id UUID REFERENCES users(id) ON DELETE CASCADE`,  
-  - `role TEXT NOT NULL CHECK(role IN ('owner','admin','member','viewer'))`,  
-  - `created_at`, `updated_at`.  
-  - *Index:* unique `(workspace_id, user_id)`.
+- **`audit_logs`**: Security/compliance audit trail. This is a generic log table (see audit section) with fields like `action`, `table_name`, `record_id`, `changes` (JSONB), `user`, `timestamp`. We index common queries, e.g. by workspace and time.  
 
-- **projects**: Projects within workspaces.  
-  - `id UUID PK`  
-  - `workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE`,  
-  - `name TEXT NOT NULL`, `slug TEXT NOT NULL`, `description TEXT`, `status TEXT`,  
-  - `created_at`, `updated_at`.  
-  - *Constraints:* Unique `(workspace_id, slug)`; index on `workspace_id`.
+We should **not** try to mirror entire external systems.  For example, we do NOT import Slack’s full message DB or GitHub’s repos schema.  We only store *selected* data relevant to Kontexa’s use cases (e.g. PR descriptions, chat snippets), usually in the Documents/Chunks tables.
 
-- **conversations**: Chat threads (within a project).  
-  - `id UUID PK`  
-  - `project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE`,  
-  - `user_id UUID REFERENCES users(id)`, (who started it)  
-  - `title TEXT`, `status TEXT`,  
-  - `created_at`, `updated_at`, `archived_at TIMESTAMPTZ`.  
-  - *Index:* `(project_id, created_at)`.
+All relationship constraints use `ON DELETE CASCADE` or `SET NULL` appropriately so that deleting a workspace or project cleans up child data.  The schema balances normalization (for consistency) with flexibility (using JSONB for dynamic fields).
 
-- **messages**: Chat messages in a conversation.  
-  - `id UUID PK`  
-  - `conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE`,  
-  - `role TEXT NOT NULL CHECK (role IN ('user','assistant','system','tool'))`,  
-  - `content TEXT`, (raw text content)  
-  - `model TEXT`, (e.g. which LLM generated it)  
-  - `created_at TIMESTAMPTZ DEFAULT now()`.
+## Tenant Isolation
 
-- **message_parts**: Decomposed message content (for structured response).  
-  - `id UUID PK`  
-  - `message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE`,  
-  - `part_type TEXT NOT NULL`, (e.g. 'text', 'code', 'citation', 'image', etc.)  
-  - `content JSONB NOT NULL`, (structured content)  
-  - `sequence INTEGER NOT NULL`,  
-  - `created_at TIMESTAMPTZ DEFAULT now()`.  
-  - *Index:* `(message_id, sequence)` to preserve order.
-
-- **documents**: User-uploaded or integrated docs (for RAG).  
-  - `id UUID PK`  
-  - `project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE`,  
-  - `name TEXT NOT NULL`, `source_type TEXT`, `source_url TEXT`, `mime_type TEXT`,  
-  - `size_bytes BIGINT`, `checksum TEXT`,  
-  - `status TEXT`, `metadata JSONB`,  
-  - `created_at`, `updated_at`.  
-  - Example `source_type` values: 'upload','github','notion','slack','jira', etc.
-
-- **document_versions**: Version history (e.g. for GitHub files or updated docs).  
-  - `id UUID PK`  
-  - `document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE`,  
-  - `version_number INTEGER NOT NULL`, `checksum TEXT`, `content_hash TEXT`,  
-  - `metadata JSONB`,  
-  - `created_at TIMESTAMPTZ DEFAULT now()`.  
-  - *Index:* `(document_id, version_number)`.
-
-- **document_chunks**: Chunks of a document version (for embeddings).  
-  - `id UUID PK`  
-  - `document_version_id UUID NOT NULL REFERENCES document_versions(id) ON DELETE CASCADE`,  
-  - `chunk_index INTEGER NOT NULL`, `content TEXT NOT NULL`, `token_count INTEGER`,  
-  - `metadata JSONB`,  
-  - `embedding VECTOR(\\<dim>)`, *(replace \\<dim> with chosen dimension, e.g. 1536)*  
-  - `created_at TIMESTAMPTZ DEFAULT now()`.  
-  - *Index:* `(document_version_id, chunk_index)`.  
-  - *Vector Index:* e.g. `CREATE INDEX ON document_chunks USING hnsw (embedding vector_l2_ops)` after populating data.
-
-- **memory_entries**: Persistent memory/embedding store.  
-  - `id UUID PK`  
-  - `project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE`,  
-  - `user_id UUID REFERENCES users(id)`, (optional owner or null for system memory)  
-  - `memory_type TEXT NOT NULL CHECK (memory_type IN ('semantic','episodic','procedural'))`,  
-  - `content TEXT NOT NULL`, `metadata JSONB`, `importance REAL`,  
-  - `embedding VECTOR(\\<dim>)`,  
-  - `created_at`, `updated_at`, `expires_at TIMESTAMPTZ`.  
-  - *Index:* `(project_id)`; vector index on `embedding`.
-
-- **oauth_accounts**: External auth (GitHub, Google, etc.).  
-  - `id UUID PK`  
-  - `user_id UUID REFERENCES users(id) ON DELETE CASCADE`,  
-  - `provider TEXT NOT NULL`, `provider_account_id TEXT NOT NULL`,  
-  - `access_token TEXT`, `refresh_token TEXT`, `expires_at TIMESTAMPTZ`,  
-  - `created_at`, `updated_at`.  
-
-- **github_connections**: Stored GitHub credentials (if separate from oauth).  
-  - `id UUID PK`  
-  - `user_id UUID REFERENCES users(id) ON DELETE CASCADE`,  
-  - `provider_account_id TEXT`, `access_token TEXT`, `refresh_token TEXT`, `expires_at TIMESTAMPTZ`,  
-  - `created_at`, `updated_at`.  
-
-- **github_repositories**: GitHub repos synced or connected.  
-  - `id UUID PK`  
-  - `project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE`,  
-  - `connection_id UUID NOT NULL REFERENCES github_connections(id) ON DELETE CASCADE`,  
-  - `github_id BIGINT`, `owner_name TEXT`, `repo_name TEXT`, `full_name TEXT`,  
-  - `default_branch TEXT`, `url TEXT`, `is_private BOOLEAN`,  
-  - `last_synced_at TIMESTAMPTZ`, `created_at`, `updated_at`.  
-
-- **github_commits**: Commits fetched for RAG or auditing.  
-  - `id UUID PK`  
-  - `repository_id UUID NOT NULL REFERENCES github_repositories(id) ON DELETE CASCADE`,  
-  - `github_id TEXT`, `sha TEXT`, `message TEXT`,  
-  - `author_name TEXT`, `author_email TEXT`, `committed_at TIMESTAMPTZ`, `url TEXT`,  
-  - `metadata JSONB`, `created_at TIMESTAMPTZ DEFAULT now()`.  
-
-- **github_pull_requests**, **github_issues**, etc.: Similar structure (id, repo ref, number, title/body, state, author, timestamps).  
-
-- **repository_files** (optional): To index code files.  
-  - `id UUID PK`  
-  - `repository_id UUID NOT NULL REFERENCES github_repositories(id) ON DELETE CASCADE`,  
-  - `path TEXT`, `branch TEXT`, `sha TEXT`, `language TEXT`, `size_bytes BIGINT`, `content_hash TEXT`,  
-  - `document_id UUID NULL REFERENCES documents(id)`, (if it’s linked to a document entry)  
-  - `created_at`, `updated_at`.  
-
-- **tools**: AI tool definitions.  
-  - `id UUID PK`  
-  - `name TEXT UNIQUE NOT NULL`, `description TEXT`, `tool_type TEXT`,  
-  - `input_schema JSONB`, `output_schema JSONB`, `is_active BOOLEAN DEFAULT true`,  
-  - `created_at`, `updated_at`.  
-
-- **tool_executions**: History of tool (Act) invocations.  
-  - `id UUID PK`  
-  - `project_id UUID NOT NULL REFERENCES projects(id)`,  
-  - `conversation_id UUID REFERENCES conversations(id)`, `message_id UUID REFERENCES messages(id)`,  
-  - `tool_id UUID NOT NULL REFERENCES tools(id)`,  
-  - `status TEXT`, `input JSONB`, `output JSONB`, `error TEXT`,  
-  - `started_at TIMESTAMPTZ DEFAULT now()`, `completed_at TIMESTAMPTZ`, `duration_ms INTEGER`.  
-
-- **agent_runs** / **agent_steps**: (Future feature, tracks multi-step agent execution.)  
-  - `agent_runs(id PK, project_id, conversation_id, status, agent_type, input JSONB, output JSONB, timestamps)`.  
-  - `agent_steps(id PK, agent_run_id FK, step_number INTEGER, step_type TEXT, input/output JSONB, status, timestamps)`.  
-
-- **tasks**: To-do items.  
-  - `id UUID PK`  
-  - `project_id UUID NOT NULL REFERENCES projects(id)`,  
-  - `created_by UUID REFERENCES users(id)`, `conversation_id UUID REFERENCES conversations(id)`,  
-  - `title TEXT NOT NULL`, `description TEXT`,  
-  - `status TEXT`, `priority TEXT`, `due_at TIMESTAMPTZ`,  
-  - `created_at`, `updated_at`, `completed_at TIMESTAMPTZ`.  
-
-- **audit_logs**: Record system events.  
-  - `id UUID PK`  
-  - `workspace_id UUID REFERENCES workspaces(id)`, `project_id UUID REFERENCES projects(id)`, `user_id UUID REFERENCES users(id)`,  
-  - `action TEXT`, `resource_type TEXT`, `resource_id UUID`, `status TEXT`,  
-  - `metadata JSONB`, `ip_address INET`,  
-  - `created_at TIMESTAMPTZ DEFAULT now()`.  
-
-- **llm_providers** / **llm_models** / **llm_usage**:  
-  - *llm_providers:* `id, name, provider_type, is_active, created_at, updated_at`.  
-  - *llm_models:* `id, provider_id FK, model_name, context_window, supports_streaming, supports_tools, is_active, created_at`.  
-  - *llm_usage:* tracks tokens/cost per message (user_id, project_id, conversation_id, message_id, model_id, input_tokens, output_tokens, total_tokens, latency_ms, estimated_cost, created_at).  
-
-- **policies / policy_events**: For later guardrails.  
-  - *policies:* `id, workspace_id, name, policy_type, rules JSONB, is_active, created_at, updated_at`.  
-  - *policy_events:* `id, policy_id FK, project_id, user_id, action, decision, reason, metadata JSONB, created_at`.  
-
-### Indexing and Extensions
-
-- **UUID and Timestamps:** Use `uuid` with `uuid_generate_v4()` (from the `uuid-ossp` extension) as `DEFAULT`. Timestamp columns `created_at`, `updated_at` use `TIMESTAMPTZ DEFAULT now()`.  
-- **Primary & Foreign Keys:** All PKs are UUID. FKs should be indexed automatically, but we also create explicit indexes on foreign keys (e.g. `CREATE INDEX ON messages(conversation_id)`), plus on commonly filtered columns (`projects(workspace_id)`, `memory_entries(project_id)`, etc.).  
-- **Soft-delete:** Add a `deleted_at TIMESTAMPTZ NULL` or `is_deleted BOOLEAN` on tables where records might be soft-deleted (e.g. `conversations.deleted_at`). Use partial indexes to exclude deleted rows if needed (e.g. `WHERE deleted_at IS NULL`).  
-- **JSONB:** Several tables have JSONB (`metadata` fields in documents, commits, audit_logs, tools, etc.). For large metadata searches, add GIN indexes. For example:  
+We enforce tenant data isolation by:
+- Always including `workspace_id` (FK) on private tables.
+- Adding **RLS policies** (PostgreSQL 9.5+) if we want the DB itself to block cross-tenant access.  For example:  
   ```sql
-  CREATE INDEX idx_documents_metadata ON documents USING GIN (metadata);
+  ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
+  CREATE POLICY conv_isolation ON conversations
+    USING (workspace_id::TEXT = current_setting('app.current_workspace')::TEXT);
   ```  
-  As the Postgres manual notes, GIN indexes on `jsonb` greatly speed up `@>` containment queries. For arrays or text search within JSON, consider `jsonb_path_ops`.  
-- **Full-Text:** You may also use `tsvector` columns or `GIN` on `(to_tsvector('english', column))` for any text search fields (chat logs, tasks, etc.), though often simple `ILIKE` or specialized search tools (ElasticSearch) are used in RAG systems.
+  This makes Postgres automatically apply `WHERE workspace_id = current_app` to every SELECT/INSERT, etc..  The application sets `app.current_workspace` session variable per request.
 
-- **Vectors (pgvector):** Enable `CREATE EXTENSION IF NOT EXISTS vector;` once per database. Define vector columns (e.g. `VECTOR(1536)` if using OpenAI 1536-dim embeddings).  
-  - **Indexing vectors:** Use approximate NN indexes for performance. Examples: 
-    ```sql
-    -- L2 distance index
-    CREATE INDEX idx_chunks_embedding ON document_chunks USING hnsw (embedding vector_l2_ops);
-    -- Cosine distance index (if vectors are normalized)
-    CREATE INDEX idx_chunks_embedding_cos ON document_chunks USING hnsw (embedding vector_cosine_ops);
-    ``` 
-    Use `ivfflat` if you want more control: 
-    ```sql
-    CREATE INDEX idx_mem_ivf ON memory_entries USING ivfflat (embedding vector_l2_ops) WITH (lists = 100);
-    ``` 
-  - **Distance operators:** Use `<->` for L2, `<#>` for inner-product, `<=>` for cosine.  
-  - **Vacuum Hint:** After bulk-loading vectors, create indexes `CONCURRENTLY` to avoid locking.
+# docs/roadmap/01-database.md
 
-### Partitioning and Scaling
+```markdown
+# Phase 1 — Database Foundation
 
-For very large tables (e.g. `messages`, `document_chunks`, `memory_entries`), consider:
+**Objective:** Design and implement the core database layer (PostgreSQL) with all foundational tables and migration support.
 
-- **Partitioning:** PostgreSQL supports declarative table partitioning (e.g. by date or by workspace). For example, partition `messages` by range of `created_at`, or `conversation_id`. This can improve query performance and maintenance (VACUUM on partitions). Another option is manual sharding (e.g. Citus) for multi-region scale. 
-- **Replicas:** Use read replicas for analytics or heavy read/query loads, as offered by cloud providers.
-- **Connection Pooling:** The application should use a pool (PgBouncer, SQLAlchemy pool) since cloud DB connections are limited. As noted, lack of pooling will exhaust `max_connections` quickly.
+## Goals
 
-### Audit and Soft-Delete
+- Define and document the database schema for Kontexa (tables listed above).
+- Set up **SQLAlchemy** (asyncpg dialect) and **Alembic** for migrations.
+- Ensure local dev environment runs PostgreSQL + pgvector + Redis via Docker.
+- Create initial migrations and sample data.
 
-- Each table has `created_at`/`updated_at`. For audit, either use `audit_logs` or enable **`pgaudit`** extension to log SQL changes. 
-- Soft-delete: Optionally add `deleted_at TIMESTAMPTZ` on mutable tables. Use queries like `WHERE deleted_at IS NULL` or policies to ignore them. 
+## Steps (Agent Tasks)
 
-### Sample CREATE TABLE (logical DDL)
+1. **Create Branch:** `git switch -c feat/database-foundation`.
+2. **Setup Docker Compose:** In `docker-compose.yml`, add services:
+   - `postgres:15` with volumes for data and ports mapped, enabling `vector` extension.
+   - `redis:latest` (for caching).
+   - (Optionally `pgadmin` for inspection).
+3. **Configure Extensions:** In an init script or migrations, run:
+   ```sql
+   CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+   CREATE EXTENSION IF NOT EXISTS vector;
+   ```
+4. **Initialize Alembic:**  
+   - Run `alembic init migrations`.  
+   - In `alembic/env.py`, set `sqlalchemy.url` from `DATABASE_URL` env var.
+5. **Create Initial Migration:**  
+   ```bash
+   alembic revision -m "Initial schema"
+   ```  
+   Edit the new file (e.g. `versions/xxxxx_initial_schema.py`) to `op.create_table` for all core tables:
+   - `users, workspaces, workspace_members, projects, conversations, messages, message_parts, integrations, documents, document_versions, document_chunks, memory_entries, tools, agent_runs, ai_providers, ai_models, ai_usage, audit_logs`.
+   - Use UUID columns (`sa.UUID`), JSONB, TIMESTAMPTZ.
+   - Add primary keys, foreign keys, and `ON DELETE CASCADE/SET NULL` rules.
+   - Add unique constraints (e.g. `(workspace_id, slug)` on projects).
+   - Add partial indexes on `deleted_at` columns (`postgresql_where="deleted_at IS NULL"`).
+   - Add GIN indexes for JSONB if needed.
+   - Add vector index:
+     ```python
+     op.execute("CREATE INDEX idx_chunks_embedding ON document_chunks USING ivfflat (embedding vector_l2_ops) WITH (lists = 100)")
+     ```
+6. **Run Migrations Locally:**  
+   - Start containers: `docker-compose up -d`.  
+   - Ensure DB is accessible (e.g. `psql` to check).  
+   - Run `alembic upgrade head`.  
+   - Verify tables: use `\d` or `psql -c '\dt'`.
+7. **Implement SQLAlchemy Models:**  
+   - In `backend/models/*.py`, define `User`, `Workspace`, `Project`, etc. with `id = Column(UUID, default=uuid4, primary_key=True)`, etc.
+   - Establish relationships (e.g. `workspace = relationship("Workspace")`).
+   - Use `ServerDefault(sa.text("now()"))` for timestamps or SQLAlchemy `func.now()`.
+8. **Test Database Operations:**  
+   - Write unit tests (pytest) to insert/read each table via SQLAlchemy.
+   - For each model, test: create a record, query by its fields (including JSONB filters), and soft-delete then ensure it’s hidden by default.
+   - Test vector insertion/query: insert a `document_chunk` with an embedding (e.g. `embedding = [1,2,3]`), then query nearest neighbors (`ORDER BY embedding <-> '[1,2,3]'`).
+9. **Document Schema:**  
+   - Fill out `docs/ARCHITECTURE.md` or a dedicated `DATABASE.md` with the schema overview (the content above).  
+   - Include the Mermaid ER diagram code.
+   - Write or update `docs/DATABASE.md` with the design rationales and table descriptions above.
+10. **Commit & Push:**  
+   ```bash
+   git add .
+   git commit -m "feat: initial database schema and migrations"
+   git push -u origin feat/database-foundation
+   ```
+   
+## Acceptance Criteria
 
-```sql
--- Enable extensions
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "vector";
+- All listed tables exist in the development database with correct columns and constraints.
+- SQLAlchemy models align with the table definitions (tests should pass).
+- Alembic history has a working migration that creates the schema.
+- Basic data (one workspace, user, project, conversation) can be created via the API or scripts.
+- Partial indexes and vector index are present (`\di+` in psql).
+- Documentation (`DATABASE.md` and ER diagram) is completed and matches the implemented schema.
 
--- Users
-CREATE TABLE users (
-    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    email         TEXT UNIQUE NOT NULL,
-    password_hash TEXT,
-    name          TEXT,
-    avatar_url    TEXT,
-    is_active     BOOLEAN NOT NULL DEFAULT true,
-    is_verified   BOOLEAN NOT NULL DEFAULT false,
-    last_login_at TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Workspaces
-CREATE TABLE workspaces (
-    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    owner_id    UUID REFERENCES users(id) ON DELETE SET NULL,
-    name        TEXT NOT NULL,
-    slug        TEXT UNIQUE NOT NULL,
-    description TEXT,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Workspace Members
-CREATE TABLE workspace_members (
-    id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-    user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    role         TEXT NOT NULL CHECK (role IN ('owner','admin','member','viewer')),
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (workspace_id, user_id)
-);
-
--- Projects
-CREATE TABLE projects (
-    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    workspace_id  UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-    name          TEXT NOT NULL,
-    slug          TEXT NOT NULL,
-    description   TEXT,
-    status        TEXT,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(workspace_id, slug)
-);
-
--- Conversations (Chat)
-CREATE TABLE conversations (
-    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    project_id     UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    user_id        UUID REFERENCES users(id),
-    title          TEXT,
-    status         TEXT,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    archived_at    TIMESTAMPTZ
-);
-
--- Messages
-CREATE TABLE messages (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    role            TEXT NOT NULL CHECK (role IN ('user','assistant','system','tool')),
-    content         TEXT NOT NULL,
-    model           TEXT,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Message Parts (for structured segments)
-CREATE TABLE message_parts (
-    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    message_id  UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
-    part_type   TEXT NOT NULL,
-    content     JSONB NOT NULL,
-    sequence    INTEGER NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (message_id, sequence)
-);
-
--- Documents
-CREATE TABLE documents (
-    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    project_id     UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    name           TEXT NOT NULL,
-    source_type    TEXT,
-    source_url     TEXT,
-    mime_type      TEXT,
-    size_bytes     BIGINT,
-    checksum       TEXT,
-    status         TEXT,
-    metadata       JSONB,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Document Versions
-CREATE TABLE document_versions (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    document_id     UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    version_number  INTEGER NOT NULL,
-    checksum        TEXT,
-    content_hash    TEXT,
-    metadata        JSONB,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (document_id, version_number)
-);
-
--- Document Chunks (with vector)
-CREATE TABLE document_chunks (
-    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    document_version_id UUID NOT NULL REFERENCES document_versions(id) ON DELETE CASCADE,
-    chunk_index         INTEGER NOT NULL,
-    content             TEXT NOT NULL,
-    token_count         INTEGER,
-    metadata            JSONB,
-    embedding           VECTOR(1536),
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (document_version_id, chunk_index)
-);
-
--- Memory Entries
-CREATE TABLE memory_entries (
-    id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    project_id   UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    user_id      UUID REFERENCES users(id),
-    memory_type  TEXT NOT NULL CHECK (memory_type IN ('semantic','episodic','procedural')),
-    content      TEXT NOT NULL,
-    metadata     JSONB,
-    importance   REAL,
-    embedding    VECTOR(1536),
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at   TIMESTAMPTZ
-);
-
--- Tool Executions
-CREATE TABLE tool_executions (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    project_id      UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    conversation_id UUID REFERENCES conversations(id),
-    message_id      UUID REFERENCES messages(id),
-    tool_id         UUID NOT NULL REFERENCES tools(id),
-    status          TEXT,
-    input           JSONB NOT NULL,
-    output          JSONB,
-    error           TEXT,
-    started_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    completed_at    TIMESTAMPTZ,
-    duration_ms     INTEGER
-);
-
--- Audit Logs
-CREATE TABLE audit_logs (
-    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    workspace_id  UUID REFERENCES workspaces(id),
-    project_id    UUID REFERENCES projects(id),
-    user_id       UUID REFERENCES users(id),
-    action        TEXT NOT NULL,
-    resource_type TEXT,
-    resource_id   UUID,
-    status        TEXT,
-    metadata      JSONB,
-    ip_address    INET,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- (Additional tables like tools, agent_runs, tasks, oauth_accounts, GitHub repos/commits, etc. follow similar patterns.)
 ```
 
-**Notes on indexes:** Add indexes on foreign keys and frequently filtered fields. Example:  
-```sql
-CREATE INDEX ON messages(conversation_id);
-CREATE INDEX ON document_chunks(document_version_id);
-CREATE INDEX ON memory_entries(project_id);
--- GIN index on JSONB:
-CREATE INDEX ON documents USING GIN (metadata jsonb_path_ops);
--- Full-text search:
-CREATE INDEX ON messages USING GIN (to_tsvector('english', content));
-```
-GIN indexes on `jsonb` allow `@>` and existence (`?`) queries.
-
-**Vector indexing example:**  
-```sql
--- Approximate search index for L2 distance
-CREATE INDEX idx_chunks_embedding_hnsw ON document_chunks USING hnsw (embedding vector_l2_ops);
-``` 
-(as recommended by pgvector docs).
-
-### Partitioning / Sharding
-
-For very large tables (messages, chunks, memory), consider partitioning by `created_at` or `workspace_id`. Partitioning can speed up deletion of old data and reduce vacuuming scope. If global scale is needed, PostgreSQL supports logical sharding (e.g. Citus), but that is advanced. Initially, a single well-provisioned instance with proper indexing and connection pooling should suffice.
-
----
-
-## DDL Scripts
-
-Below is a **production-ready DDL script outline**. Include necessary extensions, roles, and schema. In a real setup, grant minimal privileges to the app user, not superuser. 
+# DDL.sql
 
 ```sql
--- Extensions
+-- Enable extensions for UUIDs and vector support
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- Roles (example)
-CREATE ROLE app_user NOINHERIT LOGIN PASSWORD '<secure_pwd>';
-GRANT CONNECT ON DATABASE Kontexa_db TO app_user;
+-- Users (global accounts)
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
+);
+-- Index active users (soft-delete)
+CREATE INDEX idx_users_deleted ON users(deleted_at) WHERE deleted_at IS NULL;
 
--- Schemas (if needed; default "public" is fine)
-CREATE SCHEMA IF NOT EXISTS Kontexa AUTHORIZATION app_user;
+-- Workspaces (tenants)
+CREATE TABLE workspaces (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL UNIQUE,
+    slug TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
+);
+CREATE INDEX idx_workspaces_deleted ON workspaces(deleted_at) WHERE deleted_at IS NULL;
 
--- Switch to that schema
-SET search_path = Kontexa, public;
+-- User memberships in workspaces
+CREATE TABLE workspace_members (
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role VARCHAR(50) NOT NULL,
+    PRIMARY KEY (workspace_id, user_id)
+);
+CREATE INDEX idx_workspace_members_user ON workspace_members(user_id);
 
--- (Then CREATE TABLEs as above, using the schema.)
--- For brevity, assume tables above are created under `Kontexa.` schema.
+-- Projects within a workspace
+CREATE TABLE projects (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
+);
+-- Unique per workspace
+CREATE UNIQUE INDEX idx_projects_workspace_slug ON projects(workspace_id, slug);
+CREATE INDEX idx_projects_deleted ON projects(deleted_at) WHERE deleted_at IS NULL;
 
--- Example Indexes
-CREATE INDEX idx_messages_conversation ON Kontexa.messages(conversation_id);
-CREATE INDEX idx_projects_workspace ON Kontexa.projects(workspace_id);
-CREATE INDEX idx_mem_proj ON Kontexa.memory_entries(project_id);
+-- Chat conversations
+CREATE TABLE conversations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+    title TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    metadata JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
+);
+CREATE INDEX idx_conversations_workspace ON conversations(workspace_id);
+CREATE INDEX idx_conversations_deleted ON conversations(deleted_at) WHERE deleted_at IS NULL;
 
--- pgvector Index (approximate nearest neighbor)
-CREATE INDEX idx_chunks_embedding_hnsw 
-  ON Kontexa.document_chunks USING hnsw (embedding vector_l2_ops);
+-- Messages in a conversation
+CREATE TABLE messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    content TEXT NOT NULL,
+    metadata JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_messages_conversation ON messages(conversation_id);
 
--- JSONB/Gin indexes
-CREATE INDEX idx_docs_metadata_gin ON Kontexa.documents USING GIN (metadata jsonb_path_ops);
-CREATE INDEX idx_audit_metadata_gin ON Kontexa.audit_logs USING GIN (metadata);
+-- Parts of a large message (optional)
+CREATE TABLE message_parts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    part_index INT NOT NULL,
+    content TEXT,
+    mime_type VARCHAR(50),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_message_parts_msg ON message_parts(message_id);
 
--- (Add any additional indexes needed for queries, e.g. on `workspace_members` (workspace_id, user_id), etc.)
+-- External integrations (GitHub, Slack, etc.)
+CREATE TABLE integrations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    type VARCHAR(50) NOT NULL,
+    config JSONB,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
+);
+CREATE INDEX idx_integrations_workspace ON integrations(workspace_id);
+
+-- Documents for RAG / indexed knowledge
+CREATE TABLE documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    title TEXT,
+    metadata JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Versions of documents (for tracking edits)
+CREATE TABLE document_versions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Chunks of document text with embeddings
+CREATE TABLE document_chunks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_version_id UUID NOT NULL REFERENCES document_versions(id) ON DELETE CASCADE,
+    chunk_index INT NOT NULL,
+    content TEXT NOT NULL,
+    embedding VECTOR(1536),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- Vector index on embeddings (approximate nearest neighbor)
+CREATE INDEX idx_chunks_embedding ON document_chunks
+    USING ivfflat (embedding vector_l2_ops) WITH (lists = 100);
+
+-- Long-term memory entries
+CREATE TABLE memory_entries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    user_id UUID,
+    key TEXT,
+    content TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_memory_workspace ON memory_entries(workspace_id);
+
+-- Tools (custom actions) per project
+CREATE TABLE tools (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    config JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Agent or tool execution runs
+CREATE TABLE agent_runs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tool_id UUID NOT NULL REFERENCES tools(id) ON DELETE SET NULL,
+    inputs JSONB,
+    outputs JSONB,
+    status VARCHAR(20),
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ended_at TIMESTAMPTZ
+);
+CREATE INDEX idx_agent_runs_tool ON agent_runs(tool_id);
+
+-- AI providers (e.g. OpenAI, AzureAI)
+CREATE TABLE ai_providers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL UNIQUE,
+    config JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- AI models (e.g. gpt-4, PaLM2) per provider
+CREATE TABLE ai_models (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    provider_id UUID NOT NULL REFERENCES ai_providers(id) ON DELETE CASCADE,
+    model_name TEXT NOT NULL,
+    max_tokens INT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_ai_models_provider ON ai_models(provider_id);
+
+-- AI usage logs (tokens, cost)
+CREATE TABLE ai_usage (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    model_id UUID NOT NULL REFERENCES ai_models(id) ON DELETE CASCADE,
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    tokens_used BIGINT NOT NULL DEFAULT 0,
+    cost_cents BIGINT NOT NULL DEFAULT 0,
+    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_ai_usage_model ON ai_usage(model_id);
+
+-- Audit logs (trigger-based or pgAudit can populate this)
+CREATE TABLE audit_logs (
+    id BIGSERIAL PRIMARY KEY,
+    workspace_id UUID NOT NULL,
+    user_id UUID,
+    action VARCHAR(50) NOT NULL,
+    table_name VARCHAR(50),
+    record_id UUID,
+    changes JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_audit_workspace ON audit_logs(workspace_id);
+CREATE INDEX idx_audit_time ON audit_logs(created_at);
+
+-- Example: Partition old messages by month (for archival)
+CREATE TABLE messages_2026_08 PARTITION OF messages
+    FOR VALUES FROM ('2026-08-01') TO ('2026-09-01');
 ```
 
-For **reading vs writing** optimization, you might later create indexes with `CONCURRENTLY` to avoid locks. Also consider `BRIN` indexes on large date columns if historical data access is common.
+# SQLAlchemy Models & Alembic Migrations
 
----
-
-## Alembic Migration Plan
-
-We will use Alembic for migrations. Below is the suggested **ordered list of migration files** and their main content:
-
-1. **`001_initial.py`** – Create foundational tables:
-   - `users`, `workspaces`, `workspace_members`, `projects`.
-   - Possibly `oauth_accounts` if included from the start.
-   - Enable `uuid-ossp` extension and set up any enum types or check constraints.
-2. **`002_auth_sessions.py`** – Add tables for auth/session:
-   - `user_sessions` (if using JWT refresh tokens, etc).
-   - `oauth_accounts` (if not in initial).
-3. **`003_chat.py`** – Add messaging:
-   - `conversations`, `messages`, `message_parts`.
-4. **`004_tools_and_agency.py`** – Tools/Agents:
-   - `tools`, `tool_executions`, `agent_runs`, `agent_steps`.
-5. **`005_documents_rag.py`** – RAG content:
-   - `documents`, `document_versions`, `document_chunks`, `message_citations`.
-   - Enable `vector` extension.
-6. **`006_memory.py`** – Memory:
-   - `memory_entries` table.
-7. **`007_integrations.py`** – External integrations:
-   - `github_connections`, `github_repositories`, (optionally Slack, Notion later).
-8. **`008_github_data.py`** – GitHub content:
-   - `github_commits`, `github_pull_requests`, `github_issues`, `repository_files`.
-9. **`009_tasks_audit.py`** – Tasks and auditing:
-   - `tasks`, `audit_logs`.
-10. **`010_policies.py`** – (Future) Guardrails:
-    - `policies`, `policy_events`.
-
-Each migration will include `op.create_table` calls and any `op.create_index` or `op.add_column` as needed. For example, in Alembic script:
+Below are representative examples (not full code) to guide the implementation.
 
 ```python
-def upgrade():
-    # Enable extensions
-    op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";')
-    op.execute('CREATE EXTENSION IF NOT EXISTS vector;')
-    # Create tables
-    op.create_table('users', ...)
-    op.create_table('workspaces', ...)
-    ...
-    # Create indexes
-    op.create_index('ix_projects_workspace', 'projects', ['workspace_id'])
-```
-
-Always include `downgrade()` stubs if needed (for rollbacks). Keep migrations small and incremental to ease review. See the [Alembic tutorial](https://alembic.sqlalchemy.org/en/latest/tutorial.html) for details on environment setup and script structure.
-
----
-
-## SQLAlchemy (Async) Models
-
-Below are **example SQLAlchemy ORM models** (using the `asyncio` extension). Adjust for your project’s organization. We assume usage of `sqlalchemy.ext.asyncio` and declarative base.
-
-```python
-# models.py
-from sqlalchemy import Column, String, ForeignKey, Text, TIMESTAMP, Boolean, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID, JSONB, INET, REAL, VECTOR
-from sqlalchemy.orm import relationship, declarative_base
-from sqlalchemy.sql import func
+# Example SQLAlchemy declarative models (async)
+from sqlalchemy import Column, String, Text, Boolean, TIMESTAMP, ForeignKey, func
+from sqlalchemy.dialects.postgresql import UUID, JSONB, ENUM
+from sqlalchemy.ext.declarative import declarative_base
 import uuid
 
 Base = declarative_base()
 
 class User(Base):
-    __tablename__ = 'users'
+    __tablename__ = "users"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    email = Column(String, unique=True, nullable=False)
-    password_hash = Column(Text)
-    name = Column(String)
+    email = Column(String, nullable=False, unique=True)
+    name = Column(String, nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
-    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
-    # ...
+    created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now(), nullable=False)
+    deleted_at = Column(TIMESTAMP)
 
 class Workspace(Base):
-    __tablename__ = 'workspaces'
+    __tablename__ = "workspaces"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    owner_id = Column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='SET NULL'))
+    name = Column(String, nullable=False, unique=True)
+    slug = Column(String, nullable=False, unique=True)
+    created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now(), nullable=False)
+    deleted_at = Column(TIMESTAMP)
+
+class Project(Base):
+    __tablename__ = "projects"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False)
     name = Column(String, nullable=False)
-    slug = Column(String, unique=True, nullable=False)
-    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
-    # Relationships
-    owner = relationship("User", back_populates="owned_workspaces")
-    members = relationship("WorkspaceMember", back_populates="workspace")
-
-class WorkspaceMember(Base):
-    __tablename__ = 'workspace_members'
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
-    user_id = Column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    role = Column(String, nullable=False)
-    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
-    __table_args__ = (
-        UniqueConstraint('workspace_id', 'user_id', name='uq_workspace_user'),
-    )
-    workspace = relationship("Workspace", back_populates="members")
-    user = relationship("User", back_populates="memberships")
-
-# Define other models similarly...
+    slug = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="active")
+    created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now(), nullable=False)
+    deleted_at = Column(TIMESTAMP)
 ```
+
+**Alembic Example (python migration file):**
 
 ```python
-# engine_setup.py
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import sessionmaker
-
-DATABASE_URL = "postgresql+asyncpg://<user>:<password>@<host>:5432/Kontexa_db"
-
-# Create async engine
-async_engine = create_async_engine(
-    DATABASE_URL,
-    echo=True,  # or False
-    pool_size=20,
-    max_overflow=10,
-    pool_pre_ping=True,
-)
-
-# Async session factory
-AsyncSessionLocal = async_sessionmaker(
-    async_engine, expire_on_commit=False
-)
-
-# Example of getting a session:
-# async with AsyncSessionLocal() as session:
-#     async with session.begin():
-#         session.add(some_object)
+def upgrade():
+    op.create_table(
+        'workspaces',
+        sa.Column('id', sa.UUID(), nullable=False, server_default=sa.text("gen_random_uuid()")),
+        sa.Column('name', sa.String(), nullable=False),
+        sa.Column('slug', sa.String(), nullable=False),
+        sa.Column('created_at', sa.TIMESTAMP(), nullable=False, server_default=sa.text('now()')),
+        sa.Column('updated_at', sa.TIMESTAMP(), nullable=False, server_default=sa.text('now()')),
+        sa.Column('deleted_at', sa.TIMESTAMP()),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('name'),
+        sa.UniqueConstraint('slug')
+    )
+    # ... create other tables similarly ...
+    # Partial index for soft delete:
+    op.create_index('idx_workspaces_deleted', 'workspaces', ['deleted_at'], unique=False,
+                    postgresql_where=sa.text('deleted_at IS NULL'))
+    # Vector index for embeddings:
+    op.execute("CREATE INDEX idx_chunks_embedding ON document_chunks "
+               "USING ivfflat (embedding vector_l2_ops) WITH (lists = 100)")
 ```
 
-This follows SQLAlchemy 2.0 style with `asyncio`. In an async context you run queries like `result = await session.execute(...)`. We set `expire_on_commit=False` so we can use objects after commit. See the [SQLAlchemy asyncio docs](https://docs.sqlalchemy.org/en/21/orm/extensions/asyncio.html) for patterns.
+After writing models and migrations:
 
----
-
-## Deployment and Hosting
-
-**Frontend:** Deploy the Next.js app on Vercel (Vercel has a generous free tier for open-source projects).
-
-**Backend:** For FastAPI, consider one of: **Railway**, **Render**, **Fly.io**, **Cloud Run**, or a small **VM (e.g. AWS Lightsail/GCP Compute)**. Many offer free or low-cost tiers:
-
-- **Railway:** Easy Docker deploy, has managed Postgres & Redis. (Free with $1/mo credit; Hobby $5+.) Railway now provides HA Postgres with pgvector, PITR, built-in PgBouncer.
-- **Render:** Similar PaaS (Heroku-like). Managed Postgres with PITR on paid plans, autoscaling storage. Basic Postgres ~\$6/mo.
-- **Fly.io:** Can run both web and PostgreSQL (via Fly Postgres). Has a free tier (3 shared CPUs, 3GB RAM).
-- **Google Cloud Run:** Can run the API. Use **Cloud SQL** for Postgres (no Always Free for Cloud SQL, only trial credits).
-- **AWS:** EC2 or ECS for FastAPI; use **RDS/Aurora** for PostgreSQL. Note: AWS/Azure charges by hour. AWS free-tier micro is short-term (12mo).
-- **Neon/Postgres-as-a-Service:** Neon has a **free tier** (serverless Postgres with pgvector). Supabase also has free (~500MB DB + pgvector). These are dedicated DB with best features (branching, etc.). 
-
-**Database (Postgres):** We recommend a managed Postgres that supports pgvector (most do in 2026). Table comparing options:
-
-| Provider      | Type             | Free Tier         | pgvector | PITR  | HA Failover | Observability | Notes                 |
-|---------------|------------------|-------------------|----------|-------|-------------|---------------|-----------------------|
-| **Railway**   | PaaS (integrated)| $1/mo credit Free | ✔️       | ✔️   | ✔️ (Patroni) | ✅ Metrics    | Private networking, usage-based pricing |
-| **Neon**      | Dedicated SaaS   | Generous free     | ✔️       | ✔️   | auto-scaling| ✅            | Branching, scale-to-zero |
-| **Supabase**  | Dedicated BaaS   | Free (500MB)      | ✔️       | ✔️ (paid)| ✖️       | ✅            | Built-in auth/storage, easy pgvector |
-| **Render**    | PaaS (Heroku-like)| Free trial ($7)  | ✔️       | ✔️(paid) | ✖️ (single)  | ✅            | Basic \$6/mo plans; private networking to services |
-| **Heroku**    | PaaS             | *No free now*    | ✔️(standard+) | ✔️ | ✖️         | ✅            | New standard plans include pgvector (not free) |
-| **AWS RDS/Aurora** | Hyperscaler  | N/A (Trial $)    | ✔️ (via extension)| ✔️| ✔️         | ✅ CloudWatch| Enterprise-grade SLAs, but cross-AZ latency potential |
-| **Google Cloud SQL** | Hyperscaler | No always-free   | ✔️| ✔️| ✔️         | ✅ Stackdriver| Similar to AWS, high reliability |
-| **Fly.io**    | PaaS             | Free tier         | ✔️ (fly-postgres)| ✖️ | ✔️ (leader) | ✅            | Deploy DB as separate HA cluster within Fly |
-| **DigitalOcean/DO** | IaaS + Managed | 1GB Free (referral) | ✔️ | ✔️ | ✖️ (single) | ✅ DO metrics  | Managed Postgres \$9/mo minimum |
-
-*Sources:* Most providers now include pgvector support and advanced features out-of-box. Choose a provider that keeps your app and DB in the same region/network (to reduce latency/cost).
-
-**Redis:** Use for cache/session. Options:
-- If on Railway/Render, use their managed Redis add-on (some free credits available).
-- **Upstash**: Free tier (30MB) for simple rate-limiting or token bucket.
-- **AWS Elasticache**: not free (no free tier beyond trial).
-- Or run Redis in a Docker container (Docker Compose locally, or as a service/sidecar in production).
-  
-**Secrets Management:** Store DB and API credentials as environment variables in your deployment platform (Railway, Render, Vercel env). Use tools like [Vault](https://www.vaultproject.io) or provider secrets (AWS Secrets Manager, etc) for production. Do **not** hardcode secrets.
-
-**Connection Strings:** Example for SQLAlchemy/Async: 
-```env
-DATABASE_URL=postgresql+asyncpg://app_user:<password>@<host>:5432/Kontexa_db
-REDIS_URL=redis://:<password>@<host>:6379/0
+```bash
+# Generate migration based on models (optional):
+alembic revision --autogenerate -m "Create users, workspaces, projects..."
+alembic upgrade head
 ```
 
-**High Availability:** In production, use providers with **automatic failover** and **point-in-time recovery (PITR)**. Railway, Neon, Supabase, AWS RDS, etc., support PITR and replicas. Plan nightly base backups plus continuous WAL archiving.
+No items in this phase should rely on external services; focus is on the local schema. 
 
----
+# Deployment Guidance
 
-## Operational Considerations
+## Local Development
 
-- **Backups:** Regularly back up the database. Example commands (from official docs):
-  ```bash
-  # Logical backup (custom format) with pg_dump
-  pg_dump -h <host> -U app_user -Fc Kontexa_db > Kontexa_db.dump
+Use **Docker Compose** to run the stack locally:
 
-  # Restore:
-  createdb Kontexa_db_new
-  pg_restore -h <host> -U app_user -d Kontexa_db_new Kontexa_db.dump
-  ```
-  Use `-j` to parallelize restore if large. For textual dumps: `psql -d dbname < dumpfile`. Test restores regularly to ensure backups are valid.
+```yaml
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=Kontexa
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
 
-- **Vacuum & Analyze:** Set `autovacuum` on (default) to clean up dead rows. You can manually run:
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/Kontexa"
+      REDIS_URL: "redis://redis:6379"
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+```
+
+- The `backend` service runs FastAPI. It connects via `DATABASE_URL` and `REDIS_URL`.
+- The `postgres` service should have the `vector` extension enabled (Postgres 15+). We can run `CREATE EXTENSION vector;` in the init or migration.
+- With this, you can `docker-compose up`, then run migrations (`alembic upgrade head`) inside `backend` container.
+- Use a `.env` file or Docker secrets to provide credentials in real setups.
+
+## Cloud Providers (2026 Options)
+
+For the production MVP (cost-conscious):
+
+- **Frontend**: Deploy on Vercel (free tier for hobby sites) with your Next.js app.
+- **Backend + DB**: Options include:
+  - **Neon** (serverless Postgres): Free 100 CU-hours + 0.5 GiB. Supports pgvector, has built-in PITR. Use Neon’s branchable DB or main DB with `DATABASE_URL` from Neon.
+  - **Supabase**: Free tier (1 vCPU, 0.5 GiB), includes Postgres + Auth. `supabase.com` provides a connection string. It supports pgvector and daily backups/PITR.
+  - **Aiven PostgreSQL**: Free (2 vCPU, 1 GiB). Managed backups included.  
+  - **Timescale Cloud (TigerData)**: Free 750 MB (including pgvector) with PITR.
+  - **Railway / Render**: No persistent free tier (just credits), so less ideal long-term.
+  - **AWS RDS/Aurora**: $12+/month after credits. Offers multi-AZ, full backup/PITR, but higher cost.
+- **Redis**: Use managed (e.g. Redis Cloud free plan) or use Railway’s Redis. Keep it ephemeral.
+
+### Production Architecture
+
+```mermaid
+flowchart LR
+    Client[User Device] -- HTTPS --> Vercel[Vercel: Next.js Frontend]
+    Vercel --> FastAPI[Backend (FastAPI)]
+    FastAPI --> Postgres[(PostgreSQL + pgvector)]
+    FastAPI --> Redis[(Redis Cache)]
+    FastAPI --> OpenAI[OpenAI API]
+    FastAPI --> GitHub[GitHub API]
+    FastAPI --> Slack[Slack API]
+    FastAPI --> Jira[Jira API]
+    Note1[Managed Providers: Neon/Supabase/Aiven/etc] --- Postgres
+    Note2[Managed Redis or self-hosted] --- Redis
+```
+
+- **Connections:** The backend uses a connection string like `postgresql+asyncpg://user:pass@host:port/dbname?sslmode=require` (use SSL). Secrets (DB credentials, API keys) should be in environment variables or a secrets manager. 
+- **DNS and Security:** Use Vercel’s built-in HTTPS. For the backend DB, restrict access to only from your app (via security groups/VPC). 
+
+## Provider Comparison (2026)
+
+| Provider         | Free Tier                | Notes                                          |
+|------------------|--------------------------|------------------------------------------------|
+| **Neon**         | 100 CU-hrs, 0.5 GiB | Serverless, auto-scaled. Includes time-travel/PITR.  |
+| **Supabase**     | 0.5 GiB (1 vCPU)      | Postgres+Auth. Free PITR backups.   |
+| **Aiven**        | 1 GiB (2 vCPU)     | Regional DB. Automatic backups included. |
+| **TigerData**    | 750 MB (free)       | Based on Timescale. Supports pgvector. Free PITR. |
+| **Railway**      | $1 credit/month (no real free)  | Short credits, not ideal long-term.          |
+| **AWS RDS**      | $200 credit (new acct) | Minimum ~$12/mo after credits. Good uptime. |
+
+*(Costs/pricing from Bytebase (2026))*
+
+For MVP, Neon or Supabase are easiest: they give a Postgres URL and handle autoscaling. They both support pgvector out of the box. We can migrate our local schema by running Alembic with the production `DATABASE_URL`.
+
+### Secrets and Config
+
+- **Environment Variables**: Store `DATABASE_URL`, `REDIS_URL`, `OPENAI_API_KEY`, etc. in env vars or Vercel secrets. Do NOT hard-code credentials.
+- **Encryption**: Enable SSL for Postgres. Managed services typically encrypt data at rest by default.
+- **Network**: Use private networking/VPC wherever possible. E.g. Railway provides private networking between services.
+
+# Scaling & Operations
+
+- **Backups/PITR:** Ensure automatic backups are enabled. For example, AWS RDS offers free backups up to DB size; Neon and others include continuous backups/PITR. Keep at least 7–30 days of point-in-time recovery for production data.
+- **Vacuum & Reindex:** With active writes, use PostgreSQL’s autovacuum. For very large tables (e.g. messages, audit_logs) consider scheduling periodic `VACUUM (FULL)` during low traffic. After bulk deletes or major loads, run `VACUUM` and `ANALYZE`.
+- **Monitoring:** Enable `pg_stat_statements` to track slow queries. Use tools (Prometheus exporters or hosted dashboards) to monitor connections, cache hit ratios, index usage. Investigate high-load queries (e.g. vector searches) for optimization.
+- **Partition Maintenance:** For any partitioned table (e.g. monthly messages), set up a **cron job or pg_cron** to:
+  - **Create upcoming partition** before use.
+  - **Drop old partitions** beyond retention period. Dropping is instantaneous vs scanning to delete.
+- **Scaling Out:** Initially, one Postgres instance is fine. If load grows, consider:
+  - **Read replicas** for analytics or reporting queries (cache AI usage logs, audit data).
+  - **Horizontal sharding** (not yet needed; providers like PlanetScale Postgres are emerging). Note: PlanetScale Postgres will soon offer horizontal sharding (via “Neki” project).
+- **Disaster Recovery:** Test restore processes (e.g. on Neon or AWS). Keep backups in a separate region if possible.
+
+# Security Checklist
+
+- **Access Control:** Use non-superuser roles for your application. E.g. create an `app_user` role with only `CONNECT` on DB and `SELECT/INSERT/UPDATE/DELETE` on *needed* tables. Create a separate `read_only` role with only `SELECT`.  
+- **Row-Level Security:** As mentioned, enable RLS on sensitive tables (e.g. conversations, messages) so that each workspace can only see its own data. Also use RLS for soft deletes: e.g.  
   ```sql
-  VACUUM (ANALYZE) Kontexa.messages;
+  ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+  CREATE POLICY hide_deleted ON users FOR SELECT USING (deleted_at IS NULL);
+  ```  
+  This hides soft-deleted rows automatically.
+- **Encryption:** Use SSL/TLS for DB connections. Managed services encrypt at rest by default. If storing very sensitive fields (passwords, tokens), consider `pgcrypto` or client-side encryption.
+- **Secrets Management:** Do NOT commit any secrets. Use environment vars, .gitignore `.env`, or a secrets manager (AWS Secrets Manager, HashiCorp Vault).
+- **SQL Injection:** Use parameterized queries (SQLAlchemy ORM or query parameters). Never concatenate raw inputs into SQL.
+- **Database Users/Privileges:** Revoke `CREATE` on public schema if not needed. Use `GRANT` to limit schema usage. E.g.:  
+  ```sql
+  REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+  CREATE ROLE reader NOINHERIT;
+  GRANT CONNECT ON DATABASE Kontexa TO reader;
+  GRANT USAGE ON SCHEMA public TO reader;
+  GRANT SELECT ON ALL TABLES IN SCHEMA public TO reader;
   ```
-  As docs state, `VACUUM` reclaims space from deleted/updated rows. Running `VACUUM ANALYZE` keeps planner stats up-to-date. For HNSW indexes, occasionally `REINDEX CONCURRENTLY` if performance degrades.
+- **Audit Logs:** We keep an `audit_logs` table (or use pgAudit) to record important actions (logins, config changes). Ensure only admins can query full logs.  
+- **Network Security:** Restrict DB inbound rules (whitelist app server IPs). Close unused ports.  
+- **Dependency Security:** Keep Postgres, extensions, and libraries (SQLAlchemy, asyncpg) up-to-date with security patches.
 
-- **Monitoring:** Use built-in Postgres stats:
-  - `pg_stat_activity` for connections.
-  - `pg_stat_statements` extension for query analysis.
-  - Provider metrics (CPU, I/O, connections, replication lag).
-  - Log slow queries (`log_min_duration_statement`). 
-  - For pgvector: monitor recall vs index size (pgvector suggests comparing exact vs approximate search).
-  - Consider tools like **pgAdmin**, **Datadog**, or **Sentry** for alerts.
+# Testing and Acceptance Criteria
 
-- **Security Best Practices:**  
-  - Use **TLS/SSL** for DB connections. Require SSL in Postgres by `ALTER SYSTEM SET ssl = on;`. Cloud DB services often enforce this by default.  
-  - Store secrets in env vars or a vault, not in code. Rotate keys/tokens regularly.  
-  - Use least-privilege DB roles: give the app user only necessary permissions.  
-  - **Encryption at rest**: Managed DB services (AWS RDS, GCP, Neon) encrypt storage by default. For self-managed, consider Linux LUKS or filesystem encryption.  
-  - **Audit logging**: Enable `pgaudit` if available to log table changes. Use the `audit_logs` table for application-level events (login, data import, etc.).  
-  - **Network security**: Restrict DB access to your app’s IP or VPC. Avoid public accessibility if not needed. Use VPC peering or private networking (Railway/Render do this by default).
+- **Schema Tests:** Verify each table and index exists. For example, with `psql` or SQLAlchemy introspection: ensure FK constraints and partial indexes are in place.
+- **CRUD Tests:** For each model, write automated tests that create/read/update/delete records. E.g. create a user, fetch by email; create a project in a workspace, ensure it can’t be seen from another workspace ID.
+- **Multi-Tenancy Tests:** Attempt cross-tenant access: e.g. set one `current_workspace` and try to access another’s data; RLS should prevent it.
+- **Soft Delete Tests:** After “deleting” (setting `deleted_at`), verify it does not appear in “active” queries (via RLS or WHERE clause), but can be recovered by clearing `deleted_at`.
+- **Vector Query Test:** Insert sample document chunks with known embeddings. Run a vector similarity query (`ORDER BY embedding <-> [vector] LIMIT 5`) and check the results are correct and use the index (EXPLAIN should show `Index Scan` on the ivfflat index).
+- **Partitioning Test:** If partitions are created, test that inserts outside any partition range fail, and that dropping a partition removes data quickly.
+- **Migration Test:** On a fresh DB, run `alembic upgrade head` and ensure no errors. On an existing DB, run migrations to simulate upgrades.
+- **Backup/Restore Test:** If possible, simulate a point-in-time recovery or restore from a dump to verify backup integrity.
+- **Performance Smoke:** With a modest data volume (e.g. 10k messages, 1k chunks), measure query response times for key operations (simple select, vector search). Ensure acceptable (e.g. <200ms).
+- **Security Tests:** Attempt injection attacks (SQL injection) and verify they fail or are parameterized. Ensure unauthorized roles cannot read data.
+- **Agentic Tasks Validation:** Ensure all agent instructions (below) have been executed successfully in order.
 
-- **Maintenance:** Plan for minor updates and major version upgrades. Use blue-green deployments or replicas for zero-downtime. Test upgrades on a staging database first.
+# Agent Instructions (Concrete Tasks)
 
----
+1. **Switch Branch:** `git switch -c feat/database-foundation`.
+2. **Pull Dependencies:** In backend, install SQLAlchemy, Alembic:  
+   ```bash
+   pip install sqlalchemy[asyncio] asyncpg alembic psycopg2-binary
+   ```
+3. **Database Container:** Start Docker services: `docker-compose up -d postgres redis`. Ensure `vector` extension is available (`psql -c "CREATE EXTENSION vector;"`).
+4. **Initialize Alembic:** `alembic init migrations`. Edit `alembic.ini` or `env.py` to use `env.get("DATABASE_URL")`.
+5. **Create Migration:** `alembic revision -m "Initial schema"`. Open the file in `migrations/versions/`.
+6. **Edit Migration:** Add `op.create_table` for each table as per DDL above, using `sa.Column`. Also add `op.create_index` lines.
+7. **Apply Migration:** `alembic upgrade head`. Check tables: `psql -c "\d+"`.
+8. **Write Models:** Create SQLAlchemy models (as above) in `models/`. Ensure `metadata = Base.metadata`.
+9. **Run Tests:** Write a quick script or pytest file to: connect to DB, insert a test workspace, user, project. Fetch them back. Confirm nothing fails.
+10. **Vector Insert Test:** Use `asyncpg` or SQLAlchemy:  
+    ```python
+    conn.execute("INSERT INTO document_chunks (id, document_version_id, chunk_index, content, embedding) VALUES (gen_random_uuid(), 'existing-uuid', 1, 'hello', '[1,2,3]')")
+    result = conn.fetch("SELECT id FROM document_chunks ORDER BY embedding <-> '[1,2,3]' LIMIT 1")
+    ```
+11. **Create ER Diagram:** Run the Mermaid code in `DATABASE.md` to ensure it renders (Mermaid preview).
+12. **Commit Docs:** Update `DATABASE.md` with explanations. Use markdown headings, bullet lists as above. Preview in GitHub to check formatting.
+13. **Review:** Ensure all citation links in docs are correct (if manual copy).
+14. **Finalize:** `git add` and `git commit` all changes with a message like `"docs: add database schema and models"`.
+15. **Push & PR:** Push branch and open a Pull Request for review, or merge to main if working solo.
 
-## Testing and CI
-
-- **Local Development:** Use **Docker Compose** to run Postgres (with pgvector) and Redis locally. Example `docker-compose.yml`:
-  ```yaml
-  version: '3.8'
-  services:
-    postgres:
-      image: postgres:15
-      environment:
-        - POSTGRES_DB=Kontexa_db
-        - POSTGRES_USER=app_user
-        - POSTGRES_PASSWORD=changeme
-      ports:
-        - "5432:5432"
-      command: ["postgres", "-c", "shared_preload_libraries=vector"]
-    redis:
-      image: redis:7
-      ports:
-        - "6379:6379"
-    backend:
-      build: ./backend
-      env_file: .env.local
-      depends_on:
-        - postgres
-        - redis
-    frontend:
-      build: ./frontend
-      ports:
-        - "3000:3000"
-  ```
-  Ensure `shared_preload_libraries=vector` or run `psql -c "CREATE EXTENSION vector;"` on startup. Use `pytest-asyncio` for DB tests.
-
-- **Unit/Integration Tests:** Use **pytest** with fixtures to create a temporary test database. Example fixture:
-  ```python
-  @pytest.fixture(scope="session")
-  async def db_engine():
-      engine = create_async_engine("postgresql+asyncpg://app_user:changeme@localhost:5432/test_db")
-      async with engine.begin() as conn:
-          await conn.run_sync(Base.metadata.create_all)
-      yield engine
-      # teardown
-      async with engine.begin() as conn:
-          await conn.run_sync(Base.metadata.drop_all)
-      await engine.dispose()
-  ```
-  Use `async_sessionmaker` to get `AsyncSession` in tests. Populate with test data and assert queries.
-
-- **CI (GitHub Actions):** In your workflow, spin up services:
-  ```yaml
-  jobs:
-    test:
-      runs-on: ubuntu-latest
-      services:
-        postgres:
-          image: postgres:15
-          env:
-            POSTGRES_DB: test_db
-            POSTGRES_USER: app_user
-            POSTGRES_PASSWORD: changeme
-          ports: ['5432:5432']
-          options: >-
-            --health-cmd pg_isready
-            --health-interval 10s
-            --health-timeout 5s
-            --health-retries 5
-        redis:
-          image: redis:7
-          ports: ['6379:6379']
-      steps:
-        - uses: actions/checkout@v3
-        - name: Set up Python
-          uses: actions/setup-python@v4
-          with: python-version: '3.11'
-        - name: Install dependencies
-          run: pip install -r backend/requirements.txt
-        - name: Run migrations
-          run: alembic upgrade head
-          env:
-            DATABASE_URL: postgresql+asyncpg://app_user:changeme@localhost:5432/test_db
-        - name: Run tests
-          run: pytest --maxfail=1 --disable-warnings -v
-  ```
-  This ensures migrations run on a fresh DB and tests cover the DB models.
-
-- **Linting/Formatting:** Use `ruff` and `black` (as per repo foundation) to enforce style. Add a pre-commit hook.
-
----
-
-## Agent Implementation Tasks
-
-The following **step-by-step instructions** can guide an AI agent (or developer) to implement the database integration:
-
-1. **Switch branch:** Create and switch to a docs branch, e.g. `docs/Kontexa-roadmap`.
-2. **Dockerize Postgres:** In `docker-compose.yml`, add services for PostgreSQL (with pgvector) and Redis as shown above. Use environment variables for credentials. Ensure `postgres` service has `POSTGRES_DB=Kontexa_db`, etc.
-3. **Database config:** In FastAPI settings, add `DATABASE_URL` and `REDIS_URL` (read from `.env`). Use SQLAlchemy Async and include `asyncpg` in dependencies.
-4. **Install dependencies:** Add `psycopg`, `asyncpg`, `sqlalchemy[asyncio]`, `alembic`, `pgvector`, and any ORM (Pydantic if used).
-5. **SQLAlchemy models:** Create `backend/app/models` directory. Add `Base = declarative_base()` and model classes per schema above. Include `__tablename__`, columns, and relationships. Use `server_default=func.now()` for timestamps.
-6. **Alembic setup:** Run `alembic init alembic`. Configure `alembic.ini` (set sqlalchemy.url to `env database URL`). In `alembic/env.py`, import your models so it can `run_sync(Base.metadata.create_all)` if generating.
-7. **Initial migration:** Create `alembic/versions/001_initial.py` with `op.create_table` for `users`, `workspaces`, `workspace_members`, `projects`. Include `op.create_index` for foreign keys/unique constraints. Use `UUID(as_uuid=True)`.
-8. **Apply migrations locally:** Run `alembic upgrade head` on the development DB.
-9. **Iterate building schema:** Repeat for subsequent migrations (authentication, chat, documents, memory, etc.), following the plan above. Generate a new revision for each phase.
-10. **Test DB layer:** Write a simple script or test to create a new user/workspace and ensure relations and default values work. 
-11. **Add fixtures:** In `tests/conftest.py`, add Pytest fixtures to create/drop tables using SQLAlchemy or Alembic.
-12. **Validate indexes:** After migrations, verify indexes exist (psql `\d+ table`).
-13. **Documentation:** Add all relevant docs files under `docs/` and `docs/roadmap/` (see below for file list).
-14. **CI config:** Update GitHub Actions to run migrations and tests as above.
-15. **Quality check:** Ensure migrations apply cleanly and tests pass without errors.
-
-### Acceptance Criteria
-
-- All tables (per schema) are created with correct columns, types, keys, and indexes.  
-- `pgvector` extension is installed and vector columns are created.  
-- Alembic migrations can be applied in order on a blank database.  
-- SQLAlchemy models match the database schema.  
-- Basic CRUD operations (via the ORM) work in tests.  
-- No missing dependencies; linter/formatter checks pass.
-
----
-
-## Files to Create
-
-The following **Markdown files** should be added to the `docs/` directory (and `docs/roadmap/`) of the repo:
-
-- **`docs/ROADMAP.md`** – High-level project roadmap, listing phases 0–N (each with summary of goals).  
-- **`docs/ARCHITECTURE.md`** – System architecture overview (diagram + description of components: Next.js, FastAPI, Postgres, Redis, AI providers, etc.). Include the deployment mermaid topology diagram.  
-- **`docs/DATABASE.md`** – Detailed database design document (everything in *Database Design* section above). ER diagram (mermaid), full schema, indexing, tenant strategy, and reference patterns.  
-- **`docs/DEPLOYMENT.md`** – Deployment plan and hosting comparison. Include the provider comparison table and recommended setups (based on above).  
-- **`docs/DEVELOPMENT.md`** – Local development guide: Docker Compose, environment vars, how to run API, integrate Postgres/Redis locally.  
-- **`docs/TESTING.md`** – Testing strategy: Pytest setup, fixtures, CI pipeline snippet, etc.  
-- **`docs/AGENT_INSTRUCTIONS.md`** – Summarize the above agent tasks in checklist form for automated implementation.  
-- **`docs/ROADMAP.md`** – (Same as above; if you consider one file the master roadmap).  
-
-Under **`docs/roadmap/`** (phase-wise implementation):
-
-- `00-foundation.md` – Project setup: repo scaffolding, linting, formatting, initial CI, Docker Compose with backend+frontend+db+redis.  
-- `01-database.md` – *This phase.* Steps to connect FastAPI to Postgres (with pgvector), create models, migrations, etc. (As per Agent Tasks above).  
-- `02-authentication.md` – Next: User auth (fastapi-users or custom JWT), OAuth, user sessions.  
-- `03-workspace.md` – Workspace & project scaffolding (invites, membership).  
-- `04-chat.md` – Conversations and messaging implementation.  
-- `05-rag.md` – Document ingestion, chunking, embedding integration.  
-- `06-memory.md` – Memory pipeline (store/retrieve semantic memory).  
-- `07-integrations.md` – GitHub/Slack/Notion integration connectors.  
-- `08-tool_caller.md` – Register tools and invoke them.  
-- `09-agentic.md` – Agent orchestration (LangGraph-like plans).  
-- `10-ops-security.md` – Observability, logging, policies (later phases).
-
-*(Even if some phases aren’t implemented yet, listing them guides future work.)*
-
-Each `docs/roadmap/NN-*.md` should follow a consistent format: 
-
-- **Objective:** What to build.  
-- **Scope & Architecture:** High-level design.  
-- **Database changes:** New tables/fields.  
-- **Backend:** API changes, new models or endpoints.  
-- **Frontend:** UI changes or new API calls.  
-- **Tests:** Key tests to write.  
-- **Definition of Done:** Criteria for completion.  
-
-This structure helps an AI agent or developer to implement each phase systematically. 
-
----
-
-## Sources
-
-- PostgreSQL official documentation (UUID, JSONB, VACUUM, pg_dump, etc.).  
-- pgvector docs (creating vector columns, indexes).  
-- SQLAlchemy Async docs for session usage.  
-- Alembic tutorial.  
-- AWS blog on RLS multi-tenancy.  
-- Industry blog on Postgres hosting (Railway).  
-
+This completes the database implementation phase for Kontexa. Following these deliverables, an AI agent or developer has a clear, step-by-step blueprint to set up and validate the database layer with professional standards and scalability. 
