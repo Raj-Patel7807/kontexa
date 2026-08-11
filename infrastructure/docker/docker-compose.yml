@@ -56,6 +56,8 @@ services:
     build:
       context: ../..
       dockerfile: infrastructure/docker/frontend.Dockerfile
+      args:
+        BACKEND_URL: http://backend:8000
     container_name: kontexa-frontend
     restart: unless-stopped
     ports:

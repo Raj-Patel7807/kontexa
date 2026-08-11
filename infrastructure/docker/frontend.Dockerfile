@@ -10,9 +10,11 @@ RUN npm ci
 # Step 2: Build source code
 FROM base AS builder
 WORKDIR /app
+ARG BACKEND_URL=http://backend:8000
 COPY --from=deps /app/node_modules ./node_modules
 COPY frontend/ ./
-ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    BACKEND_URL=${BACKEND_URL}
 RUN npm run build
 
 # Step 3: Production runner

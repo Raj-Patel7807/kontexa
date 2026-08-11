@@ -1,4 +1,44 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+type HealthState =
+  | { kind: "checking" }
+  | { kind: "available"; status: string }
+  | { kind: "unavailable" };
+
 export default function Home() {
+  const [health, setHealth] = useState<HealthState>({ kind: "checking" });
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function checkBackendHealth(): Promise<void> {
+      try {
+        const response = await fetch("/api/health");
+        const data: unknown = await response.json();
+
+        if (!response.ok || !isHealthResponse(data)) {
+          throw new Error("The backend returned an invalid health response.");
+        }
+
+        if (isMounted) {
+          setHealth({ kind: "available", status: data.status });
+        }
+      } catch {
+        if (isMounted) {
+          setHealth({ kind: "unavailable" });
+        }
+      }
+    }
+
+    void checkBackendHealth();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col justify-between p-8 sm:p-16">
       <header className="max-w-5xl mx-auto w-full flex justify-between items-center border-b border-slate-800 pb-6">
@@ -55,14 +95,11 @@ export default function Home() {
             <h4 className="text-sm font-semibold text-slate-300">Backend Health Endpoint</h4>
             <p className="text-xs text-slate-500 font-mono mt-1">GET /health</p>
           </div>
-          <a
-            href="http://localhost:8000/health"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono transition-colors border border-slate-700"
-          >
-            http://localhost:8000/health
-          </a>
+          <p className="px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-xs font-mono border border-slate-700" role="status">
+            {health.kind === "checking" && "Checking backend health…"}
+            {health.kind === "available" && `Backend status: ${health.status}`}
+            {health.kind === "unavailable" && "Backend health check unavailable"}
+          </p>
         </div>
       </main>
 
@@ -74,5 +111,14 @@ export default function Home() {
         </div>
       </footer>
     </div>
+  );
+}
+
+function isHealthResponse(data: unknown): data is { status: string } {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "status" in data &&
+    typeof data.status === "string"
   );
 }
