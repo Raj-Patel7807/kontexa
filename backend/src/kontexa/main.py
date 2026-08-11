@@ -9,6 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from kontexa.api.health import router as health_router
 from kontexa.core.config import settings
+from kontexa.database.redis import close_redis_connection
+from kontexa.database.session import close_database_engine
 
 # Configure basic logging
 logging.basicConfig(
@@ -23,6 +25,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan manager handling startup and shutdown events."""
     logger.info("Initializing %s in %s mode...", settings.app_name, settings.app_env)
     yield
+    await close_redis_connection()
+    await close_database_engine()
     logger.info("Shutting down %s...", settings.app_name)
 
 

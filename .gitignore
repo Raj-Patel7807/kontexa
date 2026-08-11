@@ -51,3 +51,4 @@ docker-volumes/
 # Keep lockfiles
 !backend/uv.lock
 !frontend/package-lock.json
+!frontend/.env.example

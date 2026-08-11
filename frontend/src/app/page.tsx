@@ -2,9 +2,26 @@
 
 import { useEffect, useState } from "react";
 
+type DependencyHealth = {
+  status: "ok" | "unavailable";
+  latency_ms: number;
+};
+
+type HealthResponse = {
+  status: "ok" | "degraded";
+  service: string;
+  environment: string;
+  version: string;
+  timestamp: string;
+  dependencies: {
+    database: DependencyHealth;
+    redis: DependencyHealth;
+  };
+};
+
 type HealthState =
   | { kind: "checking" }
-  | { kind: "available"; status: string }
+  | { kind: "available"; health: HealthResponse }
   | { kind: "unavailable" };
 
 export default function Home() {
@@ -23,7 +40,7 @@ export default function Home() {
         }
 
         if (isMounted) {
-          setHealth({ kind: "available", status: data.status });
+          setHealth({ kind: "available", health: data });
         }
       } catch {
         if (isMounted) {
@@ -92,14 +109,28 @@ export default function Home() {
 
         <div className="p-6 rounded-xl bg-slate-900/40 border border-slate-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h4 className="text-sm font-semibold text-slate-300">Backend Health Endpoint</h4>
+            <h4 className="text-sm font-semibold text-slate-300">Backend Readiness</h4>
             <p className="text-xs text-slate-500 font-mono mt-1">GET /health</p>
           </div>
-          <p className="px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-xs font-mono border border-slate-700" role="status">
+          <div
+            className="px-4 py-3 rounded-lg bg-slate-800 text-slate-200 text-xs font-mono border border-slate-700"
+            role="status"
+          >
             {health.kind === "checking" && "Checking backend health…"}
-            {health.kind === "available" && `Backend status: ${health.status}`}
+            {health.kind === "available" && (
+              <div className="space-y-1">
+                <p>
+                  {health.health.service} {health.health.version} · {health.health.status}
+                </p>
+                <p className="text-slate-400">
+                  PostgreSQL: {health.health.dependencies.database.status} ({formatLatency(health.health.dependencies.database.latency_ms)})
+                  {" · "}
+                  Redis: {health.health.dependencies.redis.status} ({formatLatency(health.health.dependencies.redis.latency_ms)})
+                </p>
+              </div>
+            )}
             {health.kind === "unavailable" && "Backend health check unavailable"}
-          </p>
+          </div>
         </div>
       </main>
 
@@ -114,11 +145,34 @@ export default function Home() {
   );
 }
 
-function isHealthResponse(data: unknown): data is { status: string } {
+function isHealthResponse(data: unknown): data is HealthResponse {
+  if (!isRecord(data) || !isRecord(data.dependencies)) {
+    return false;
+  }
+
   return (
-    typeof data === "object" &&
-    data !== null &&
-    "status" in data &&
-    typeof data.status === "string"
+    (data.status === "ok" || data.status === "degraded") &&
+    typeof data.service === "string" &&
+    typeof data.environment === "string" &&
+    typeof data.version === "string" &&
+    typeof data.timestamp === "string" &&
+    isDependencyHealth(data.dependencies.database) &&
+    isDependencyHealth(data.dependencies.redis)
   );
+}
+
+function isDependencyHealth(data: unknown): data is DependencyHealth {
+  return (
+    isRecord(data) &&
+    (data.status === "ok" || data.status === "unavailable") &&
+    typeof data.latency_ms === "number"
+  );
+}
+
+function isRecord(data: unknown): data is Record<string, unknown> {
+  return typeof data === "object" && data !== null;
+}
+
+function formatLatency(latencyMs: number): string {
+  return `${latencyMs.toFixed(2)} ms`;
 }

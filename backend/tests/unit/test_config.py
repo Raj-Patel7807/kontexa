@@ -14,9 +14,11 @@ def test_default_settings_load_without_error() -> None:
         database_url="postgresql+asyncpg://test:test@localhost:5432/test_db",
     )
     assert s.app_name == "Kontexa Backend"
+    assert s.app_version == "0.1.0"
     assert s.app_env == "development"
     assert s.database_pool_size == 5
     assert s.database_max_overflow == 10
+    assert s.health_check_timeout_seconds == 2.0
 
 
 def test_database_sync_url_replaces_asyncpg_with_psycopg2() -> None:
