@@ -52,7 +52,17 @@ class DocumentChunk(UUIDPrimaryKeyMixin, Base):
     """A text chunk of a document version with an embedding vector for similarity search."""
 
     __tablename__ = "document_chunks"
-    __table_args__ = (Index("idx_chunks_doc_version", "document_version_id"),)
+
+    __table_args__ = (
+        Index("idx_chunks_doc_version", "document_version_id"),
+        Index(
+            "idx_chunks_embedding",
+            "embedding",
+            postgresql_using="ivfflat",
+            postgresql_with={"lists": 100},
+            postgresql_ops={"embedding": "vector_l2_ops"},
+        ),
+    )
 
     document_version_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
