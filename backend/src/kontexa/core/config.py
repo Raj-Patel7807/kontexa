@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     port: int = Field(default=8000, description="API server port bind address")
 
     database_url: str = Field(
-        default="postgresql+asyncpg://kontexa:kontexa_pass@localhost:5432/kontexa_db",
+        # default="postgresql+asyncpg://kontexa:kontexa_pass@localhost:5432/kontexa_db",
         description="Async SQLAlchemy database connection string",
     )
     database_pool_size: int = Field(
