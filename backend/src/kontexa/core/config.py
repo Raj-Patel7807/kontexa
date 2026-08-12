@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = Field(default="Kontexa Backend", description="Application name")
+    app_version: str = Field(default="0.1.0", description="Application version")
     app_env: str = Field(default="development", description="Current execution environment")
     debug: bool = Field(default=False, description="Debug mode toggle")
     log_level: str = Field(default="INFO", description="Logging output level")
@@ -26,7 +27,7 @@ class Settings(BaseSettings):
     port: int = Field(default=8000, description="API server port bind address")
 
     database_url: str = Field(
-        default="postgresql+asyncpg://kontexa:kontexa_pass@localhost:5432/kontexa_db",
+        # default="postgresql+asyncpg://kontexa:kontexa_pass@localhost:5432/kontexa_db",
         description="Async SQLAlchemy database connection string",
     )
     database_pool_size: int = Field(
@@ -49,6 +50,11 @@ class Settings(BaseSettings):
     redis_url: str = Field(
         default="redis://localhost:6379/0",
         description="Redis server connection string",
+    )
+    health_check_timeout_seconds: float = Field(
+        default=2.0,
+        gt=0,
+        description="Maximum time allowed for each dependency health check",
     )
 
     cors_origins: list[str] = Field(

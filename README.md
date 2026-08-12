@@ -50,6 +50,13 @@ make lint
 make format
 ```
 
+## Readiness endpoint
+
+The backend exposes `GET /health` (and `GET /api/v1/health`) for operational checks. It verifies
+PostgreSQL and Redis using the configured application connections, then returns the service version,
+environment, UTC timestamp, and per-dependency latency. It returns HTTP 200 when ready and HTTP 503
+with `"status": "degraded"` when either required dependency is unavailable.
+
 ## Documentation
 
 Detailed repository documentation is available in the `docs/` directory:
