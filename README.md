@@ -46,4 +46,4 @@ architecture, flows, configuration reference, database reference, roadmap, and d
 
 ## License
 
-Distributed under the [MIT License](LICENSE).
+Kontexa is licensed under the [Apache License 2.0](LICENSE).
