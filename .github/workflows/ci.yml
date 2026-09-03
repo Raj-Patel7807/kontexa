@@ -21,3 +21,7 @@ jobs:
   frontend-ci:
     name: Frontend CI
     uses: ./.github/workflows/frontend.yml
+
+  infrastructure-ci:
+    name: Infrastructure CI
+    uses: ./.github/workflows/infrastructure.yml
