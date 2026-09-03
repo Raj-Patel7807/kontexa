@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import ForeignKey, Index, Integer, String, Text
+from sqlalchemy import ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -34,7 +34,13 @@ class MessagePart(UUIDPrimaryKeyMixin, Base):
     """Sub-part of a large message, allowing chunked storage with MIME type tagging."""
 
     __tablename__ = "message_parts"
-    __table_args__ = (Index("idx_message_parts_msg", "message_id"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "message_id",
+            "part_index",
+            name="uq_message_parts_message_id_part_index",
+        ),
+    )
 
     message_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

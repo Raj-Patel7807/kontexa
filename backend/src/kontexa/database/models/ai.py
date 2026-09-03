@@ -3,7 +3,16 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import TIMESTAMP, BigInteger, ForeignKey, Index, Integer, String, text
+from sqlalchemy import (
+    TIMESTAMP,
+    BigInteger,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -27,7 +36,13 @@ class AIModel(UUIDPrimaryKeyMixin, Base):
     """Supported model under an AI provider (e.g. gpt-4o, claude-3-5-sonnet)."""
 
     __tablename__ = "ai_models"
-    __table_args__ = (Index("idx_ai_models_provider", "provider_id"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "provider_id",
+            "model_name",
+            name="uq_ai_models_provider_id_model_name",
+        ),
+    )
 
     provider_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

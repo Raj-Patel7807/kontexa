@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import TIMESTAMP, ForeignKey, Index, Integer, Text, text
+from sqlalchemy import TIMESTAMP, ForeignKey, Index, Integer, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -19,6 +19,7 @@ class Document(UUIDPrimaryKeyMixin, Base):
     """A high-level knowledge document (e.g. a Notion page, GitHub PR, Slack thread)."""
 
     __tablename__ = "documents"
+    __table_args__ = (Index("idx_documents_project", "project_id"),)
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -36,6 +37,7 @@ class DocumentVersion(UUIDPrimaryKeyMixin, Base):
     """An immutable snapshot of a document's content, enabling version tracking."""
 
     __tablename__ = "document_versions"
+    __table_args__ = (Index("idx_document_versions_document", "document_id"),)
 
     document_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -54,7 +56,11 @@ class DocumentChunk(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "document_chunks"
 
     __table_args__ = (
-        Index("idx_chunks_doc_version", "document_version_id"),
+        UniqueConstraint(
+            "document_version_id",
+            "chunk_index",
+            name="uq_document_chunks_document_version_id_chunk_index",
+        ),
         Index(
             "idx_chunks_embedding",
             "embedding",

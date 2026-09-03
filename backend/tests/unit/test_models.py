@@ -92,9 +92,9 @@ def test_workspace_has_expected_columns() -> None:
     assert expected.issubset(column_names)
 
 
-def test_workspace_name_is_unique() -> None:
-    """Verify Workspace.name has a unique constraint."""
-    assert Workspace.__table__.c.name.unique is True
+def test_workspace_name_is_not_globally_unique() -> None:
+    """Verify workspace display names are not global identities."""
+    assert Workspace.__table__.c.name.unique is not True
 
 
 def test_workspace_slug_is_unique() -> None:
@@ -217,6 +217,11 @@ def test_conversation_project_fk_sets_null() -> None:
     assert fk.ondelete == "SET NULL"
 
 
+def test_conversation_has_project_lookup_index() -> None:
+    """Verify project-scoped conversations can be queried efficiently."""
+    assert "idx_conversations_project" in {index.name for index in Conversation.__table__.indexes}
+
+
 # ---------------------------------------------------------------------------
 # Message model tests
 # ---------------------------------------------------------------------------
@@ -279,6 +284,13 @@ def test_message_part_message_fk_cascades() -> None:
     assert fk.ondelete == "CASCADE"
 
 
+def test_message_part_has_unique_message_ordering() -> None:
+    """Verify a message cannot contain duplicate part positions."""
+    constraints = {constraint.name: constraint for constraint in MessagePart.__table__.constraints}
+    constraint = constraints["uq_message_parts_message_id_part_index"]
+    assert tuple(column.name for column in constraint.columns) == ("message_id", "part_index")
+
+
 # ---------------------------------------------------------------------------
 # Document model tests
 # ---------------------------------------------------------------------------
@@ -303,6 +315,11 @@ def test_document_project_fk_cascades() -> None:
     assert fk.ondelete == "CASCADE"
 
 
+def test_document_has_project_lookup_index() -> None:
+    """Verify project documents can be queried efficiently."""
+    assert "idx_documents_project" in {index.name for index in Document.__table__.indexes}
+
+
 def test_document_version_table_name() -> None:
     """Verify the DocumentVersion model maps to 'document_versions'."""
     assert DocumentVersion.__tablename__ == "document_versions"
@@ -312,6 +329,13 @@ def test_document_version_document_fk_cascades() -> None:
     """Verify DocumentVersion.document_id FK uses ON DELETE CASCADE."""
     fk = next(iter(DocumentVersion.__table__.c.document_id.foreign_keys))
     assert fk.ondelete == "CASCADE"
+
+
+def test_document_version_has_document_lookup_index() -> None:
+    """Verify document versions can be queried efficiently."""
+    assert "idx_document_versions_document" in {
+        index.name for index in DocumentVersion.__table__.indexes
+    }
 
 
 def test_document_chunk_table_name() -> None:
@@ -329,6 +353,18 @@ def test_document_chunk_version_fk_cascades() -> None:
     """Verify DocumentChunk.document_version_id FK uses ON DELETE CASCADE."""
     fk = next(iter(DocumentChunk.__table__.c.document_version_id.foreign_keys))
     assert fk.ondelete == "CASCADE"
+
+
+def test_document_chunk_has_unique_version_ordering() -> None:
+    """Verify a document version cannot contain duplicate chunk positions."""
+    constraints = {
+        constraint.name: constraint for constraint in DocumentChunk.__table__.constraints
+    }
+    constraint = constraints["uq_document_chunks_document_version_id_chunk_index"]
+    assert tuple(column.name for column in constraint.columns) == (
+        "document_version_id",
+        "chunk_index",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -388,6 +424,13 @@ def test_memory_entry_workspace_fk_cascades() -> None:
     assert fk.ondelete == "CASCADE"
 
 
+def test_memory_entry_user_fk_sets_null() -> None:
+    """Verify deleting a user preserves memory without its author reference."""
+    fk = next(iter(MemoryEntry.__table__.c.user_id.foreign_keys))
+    assert fk.target_fullname == "users.id"
+    assert fk.ondelete == "SET NULL"
+
+
 # ---------------------------------------------------------------------------
 # Tool and AgentRun model tests
 # ---------------------------------------------------------------------------
@@ -410,6 +453,11 @@ def test_tool_project_fk_cascades() -> None:
     """Verify Tool.project_id FK uses ON DELETE CASCADE."""
     fk = next(iter(Tool.__table__.c.project_id.foreign_keys))
     assert fk.ondelete == "CASCADE"
+
+
+def test_tool_has_project_lookup_index() -> None:
+    """Verify project tools can be queried efficiently."""
+    assert "idx_tools_project" in {index.name for index in Tool.__table__.indexes}
 
 
 def test_agent_run_table_name() -> None:
@@ -465,10 +513,12 @@ def test_ai_model_provider_fk_cascades() -> None:
     assert fk.ondelete == "CASCADE"
 
 
-def test_ai_provider_and_model_keep_provider_configuration_and_lookup_index() -> None:
-    """Verify providers retain structured configuration and models remain provider-queryable."""
+def test_ai_provider_and_model_keep_provider_configuration_and_unique_identity() -> None:
+    """Verify a provider cannot register the same model name more than once."""
     assert isinstance(AIProvider.__table__.c.config.type, JSONB)
-    assert {index.name for index in AIModel.__table__.indexes} == {"idx_ai_models_provider"}
+    constraints = {constraint.name: constraint for constraint in AIModel.__table__.constraints}
+    constraint = constraints["uq_ai_models_provider_id_model_name"]
+    assert tuple(column.name for column in constraint.columns) == ("provider_id", "model_name")
 
 
 def test_ai_usage_table_name() -> None:

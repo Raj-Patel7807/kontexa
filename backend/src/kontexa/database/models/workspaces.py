@@ -18,7 +18,7 @@ class Workspace(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
         Index("idx_workspaces_deleted", "deleted_at", postgresql_where="deleted_at IS NULL"),
     )
 
-    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
     slug: Mapped[str] = mapped_column(String, nullable=False, unique=True)
 
     members: Mapped[list["WorkspaceMember"]] = relationship(

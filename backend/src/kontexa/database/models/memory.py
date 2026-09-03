@@ -24,6 +24,7 @@ class MemoryEntry(UUIDPrimaryKeyMixin, Base):
     )
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
     key: Mapped[str | None] = mapped_column(Text, nullable=True)
