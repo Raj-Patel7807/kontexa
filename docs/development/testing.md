@@ -1,74 +1,44 @@
-# Testing & Verification Guide
+# Testing and Verification
 
-This document outlines the testing, linting, and type checking workflows for Kontexa.
-
----
-
-## 1. Quick Verification Commands
-
-Execute all repository verification checks using Make:
+Run the repository's required checks from the root:
 
 ```bash
-# Run backend tests and frontend type checks
-make test
-
-# Run backend and frontend linter checks
 make lint
-
-# Format Python codebase
-make format
+make test
 ```
 
----
+`make lint` runs `uv run ruff check .` in `backend/` and `npm run lint` in `frontend/`. `make test`
+runs `uv run pytest` in `backend/` and `npm run typecheck` in `frontend/`.
 
-## 2. Backend Testing & Verification
-
-### Running Pytest Suite
+## Backend
 
 ```bash
 cd backend
+uv run ruff check .
+uv run ruff format --check .
 uv run pytest
 ```
 
-### Running Linter & Formatter
+`make format` runs `uv run ruff format .` for the backend. The test suite includes unit tests for
+settings, health behavior, and SQLAlchemy models, plus an integration-level check that the engine
+and schema registry initialize. It does not require a live PostgreSQL or Redis instance because
+health dependency calls are mocked in endpoint tests.
 
-```bash
-cd backend
-# Check for lint issues
-uv run ruff check .
-
-# Check formatting compliance
-uv run ruff format --check .
-
-# Automatically apply formatting
-uv run ruff format .
-```
-
----
-
-## 3. Frontend Verification
-
-### Running Linter & Type Check
+## Frontend
 
 ```bash
 cd frontend
-# Run ESLint
 npm run lint
-
-# Run TypeScript type check
 npm run typecheck
-
-# Test production build
 npm run build
 ```
 
----
+No frontend test runner is configured. `npm run build` is an additional production-build check; it
+is not included in `make test`.
 
-## 4. Continuous Integration Expectations
+## Continuous integration
 
-Pull requests must pass all CI workflow checks:
-- Backend Ruff linting & formatting compliance
-- Backend Pytest execution
-- Frontend ESLint verification
-- Frontend TypeScript type checking
-- Frontend Next.js production build verification
+The root `CI Pipeline` workflow runs on pushes and pull requests to `main`. It invokes reusable
+backend and frontend workflows. Backend CI runs dependency installation, Ruff linting, Ruff format
+checking, and pytest. Frontend CI runs `npm ci`, ESLint, TypeScript type checking, and the Next.js
+production build.

@@ -13,7 +13,7 @@ Thank you for contributing to Kontexa. This guide outlines the development workf
    ```bash
    make setup
    ```
-3. Start the local database and Redis services:
+3. Start the local containerized stack (PostgreSQL, Redis, backend, and frontend):
    ```bash
    make up
    ```
@@ -47,6 +47,8 @@ make test
 ```
 
 Refer to [docs/CODE_RULES.md](docs/CODE_RULES.md) for opinionated project guidelines and style requirements.
+See [docs/development/setup.md](docs/development/setup.md) and
+[docs/development/testing.md](docs/development/testing.md) for current commands and behavior.
 
 ## Pull Request Guidelines
 

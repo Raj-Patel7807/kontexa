@@ -1,93 +1,66 @@
-# System Architecture — Kontexa
+# System Architecture
 
-This document describes the high-level system architecture, component boundaries, and technical principles governing Kontexa.
+Kontexa is organized as a monorepo with a Next.js frontend and a FastAPI backend. The backend is
+intended to remain a modular monolith: related capabilities live in explicit modules and deploy as
+one application until a demonstrated requirement justifies a separate service.
 
----
+For product requirements, see [PRD.md](PRD.md); for request and data movement, see
+[FLOW.md](FLOW.md); for established choices, see [DECISIONS.md](DECISIONS.md).
 
-## High-Level Architecture Overview
+## Current implementation
 
-```text
-                    ┌──────────────────────┐
-                    │      Frontend        │
-                    │ Next.js / React / TS │
-                    └──────────┬───────────┘
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │       Backend        │
-                    │ FastAPI / Python     │
-                    │                      │
-                    │ Modular Monolith     │
-                    └───────┬───────┬──────┘
-                            │       │
-                            ▼       ▼
-                     PostgreSQL    Redis
-                      + pgvector
+```mermaid
+flowchart LR
+    Browser[Browser] --> Frontend[Next.js frontend :3000]
+    Frontend -->|/api/:path* rewrite| Backend[FastAPI backend :8000]
+    Backend -->|SELECT 1| Postgres[(PostgreSQL 16 + pgvector)]
+    Backend -->|PING| Redis[(Redis 7)]
 ```
 
----
+- `frontend/` contains an App Router status dashboard. It polls `/api/health` through the Next.js
+  rewrite configured in `frontend/next.config.ts`.
+- `backend/` exposes `GET /health` and `GET /api/v1/health`. Each returns `200` and `ok` only when
+  both PostgreSQL and Redis respond; otherwise it returns `503` and `degraded` without exposing
+  connection details.
+- `backend/src/kontexa/database/` owns the async SQLAlchemy engine/session and Redis client.
+- The repository contains SQLAlchemy models and initial Alembic migration `20260811_0001` for the
+  intended application schema. No product API currently reads or writes those entities.
+- `infrastructure/docker/docker-compose.yml` runs PostgreSQL, Redis, backend, and frontend for
+  local containerized development. The frontend and backend images are production-style builds;
+  local hot reload is provided by `make dev` instead.
 
-## 1. Current Architecture (Initialized Foundation)
+## Boundaries and principles
 
-The repository is structured as a **modular monolith monorepo**:
+- **Frontend boundary:** browser-facing UI communicates with backend routes through explicit HTTP
+  responses; the current local API boundary is the Next.js rewrite.
+- **API boundary:** FastAPI route handlers validate and present HTTP concerns. Domain behavior
+  should not accumulate in handlers.
+- **Configuration boundary:** backend settings belong in `kontexa.core.config`; environment values
+  are validated by Pydantic Settings.
+- **Data boundary:** persistent data access belongs in `kontexa.database`. PostgreSQL is the
+  primary relational store and the selected vector store through pgvector.
+- **Redis boundary:** Redis is a dependency currently used for readiness verification. Caching,
+  sessions, rate limiting, or queues require feature-specific implementation before they can be
+  treated as active behavior.
+- **Provider boundary:** future AI provider SDKs must sit behind internal domain interfaces so
+  provider details do not leak into product logic.
 
-- **Frontend**: A Next.js (TypeScript, React, Tailwind CSS) web application providing the client workspace UI.
-- **Backend**: A Python 3.12+ FastAPI application structured for domain modularity. Currently bootstrapped with core application settings, database session management, and a health endpoint (`GET /health`).
-- **Data Stores**: Local Docker environment supporting PostgreSQL 16+ (with `pgvector` extension) and Redis.
-- **Infrastructure**: Local developer orchestration via Docker Compose.
+## Planned direction
 
----
+The roadmap calls for authentication, workspace/project management, conversations, provider-
+independent AI, document ingestion and retrieval, integrations, tools, and audit trails. These are
+not live architecture components yet. Planned backend domains may be added under
+`backend/src/kontexa/` when their implementation begins; current directories must not be inferred
+from this plan.
 
-## 2. Intended Backend Module Boundaries
+The initial schema anticipates the following concepts: users, workspaces and memberships, projects,
+conversations/messages, documents/chunks, memory entries, integrations, tools/agent runs, AI
+providers/models/usage, and audit logs. It is a persistence foundation, not evidence that the
+corresponding workflows exist.
 
-Future backend functionality will be developed as explicit modules inside `backend/src/kontexa/`:
+## Deployment posture
 
-```text
-backend/src/kontexa/
-├── api/             # FastAPI routing and endpoint handlers
-├── core/            # Environment settings, security primitives, logging
-├── database/        # Engine initialization, session management, migrations
-│
-├── auth/            # (Planned) Authentication and session management
-├── projects/        # (Planned) Workspace project management
-├── conversations/   # (Planned) Chat history and context session tracking
-│
-├── knowledge/       # (Planned) Document ingestion, parsing, chunking, indexing
-├── ai/              # (Planned) LLM provider abstractions, prompts, tool definitions
-├── memory/          # (Planned) Context tracking and long-term memory
-└── integrations/    # (Planned) GitHub and third-party API integrations
-```
-
-*Note: The domain directories above represent architectural direction and are not created until active feature development requires them.*
-
----
-
-## 3. Conceptual AI & RAG Pipeline (Planned Direction)
-
-When context retrieval and AI feature development begins, knowledge processing will follow a pipeline:
-
-```text
-External Sources (Codebase, Docs, GitHub)
-            ↓
-Ingestion & Parsing
-            ↓
-Knowledge Representation (Embeddings / Chunking)
-            ↓
-Vector Retrieval (PostgreSQL + pgvector)
-            ↓
-AI / LLM Processing
-            ↓
-Application Response
-```
-
-*Clarification: No AI, embedding generation, or vector retrieval logic is active in the initialized repository.*
-
----
-
-## 4. Key Architectural Principles
-
-1. **Modular Monolith First**: Build features as well-defined internal backend modules before considering distributed services.
-2. **PostgreSQL as Primary Data Store**: Store relational application data and vector embeddings within PostgreSQL (leveraging `pgvector`).
-3. **Targeted Redis Usage**: Use Redis strictly for session caching, rate-limiting, or task queue backends where technically justified.
-4. **Strict Vendor Isolation**: Wrap all external AI and LLM APIs behind internal interfaces to prevent vendor lock-in across domain logic.
-5. **Measurable Complexity**: Only add abstractions or microservices when technical requirements demand them.
+Docker Compose is the supported local orchestration path. The repository does not define a hosted
+deployment, Kubernetes configuration, production migration automation, or operational SLOs.
+Aiven-specific TLS settings and a bootstrap SQL file are available for a manually provisioned
+PostgreSQL service; use Alembic for normal schema evolution.
