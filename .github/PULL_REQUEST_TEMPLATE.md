@@ -1,20 +1,52 @@
-## Description
+## Summary
 
-Summary of the changes introduced in this PR.
+Explain what changed and why it is needed.
+
+## Related Issue
+
+Optional: `Closes #...`
+
+## Areas Changed
+
+- [ ] Backend
+- [ ] Frontend
+- [ ] Database
+- [ ] Infrastructure / Docker
+- [ ] CI/CD
+- [ ] Documentation
+- [ ] Tests
 
 ## Type of Change
 
-- [ ] `feat:` New feature
+- [ ] `feat:` New functionality
 - [ ] `fix:` Bug fix
-- [ ] `docs:` Documentation update
-- [ ] `refactor:` Code refactoring
-- [ ] `test:` Adding or updating tests
-- [ ] `chore:` Maintenance or build process updates
+- [ ] `docs:` Documentation
+- [ ] `refactor:` Internal code change
+- [ ] `test:` Tests
+- [ ] `ci:` CI workflow
+- [ ] `chore:` Maintenance or build tooling
 
-## Verification & Testing
+## Implementation Notes
 
-- [ ] Backend tests pass (`uv run pytest`)
-- [ ] Backend linter and formatter pass (`uv run ruff check .` & `uv run ruff format --check .`)
-- [ ] Frontend linting passes (`npm run lint`)
-- [ ] Frontend type check passes (`npm run typecheck`)
-- [ ] Frontend builds cleanly (`npm run build`)
+Add only details reviewers need to understand the change.
+
+## Impact
+
+- Database or migration impact: N/A
+- Configuration or environment impact: N/A
+- Security impact: N/A
+- Documentation impact: N/A
+
+## Validation
+
+List the relevant checks performed for the areas changed (for example, targeted tests, linting,
+type checks, builds, or Docker Compose validation).
+
+## Final Checklist
+
+- [ ] Scope is limited to the intended change.
+- [ ] No secrets, credentials, or private connection strings are committed.
+- [ ] No debugging or temporary code remains.
+- [ ] Documentation is synchronized where needed.
+- [ ] Relevant tests and checks pass.
+- [ ] No unrelated future-roadmap functionality was added.

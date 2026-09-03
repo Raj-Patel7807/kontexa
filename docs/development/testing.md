@@ -39,6 +39,9 @@ is not included in `make test`.
 ## Continuous integration
 
 The root `CI Pipeline` workflow runs on pushes and pull requests to `main`. It invokes reusable
-backend and frontend workflows. Backend CI runs dependency installation, Ruff linting, Ruff format
-checking, and pytest. Frontend CI runs `npm ci`, ESLint, TypeScript type checking, and the Next.js
-production build.
+backend, frontend, and infrastructure workflows. Backend CI runs dependency installation, Ruff
+linting, Ruff format checking, and pytest. Frontend CI runs `npm ci`, ESLint, TypeScript type
+checking, and the Next.js production build. Infrastructure CI validates Docker Compose
+configuration, builds both application images, starts PostgreSQL and Redis, applies the Alembic
+migration chain to the clean Compose database, starts the backend and frontend containers, checks
+their HTTP responses, and always removes Compose containers and volumes.

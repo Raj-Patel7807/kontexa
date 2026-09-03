@@ -1,0 +1,45 @@
+name: Infrastructure CI
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  infrastructure-checks:
+    name: Infrastructure Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      COMPOSE_FILE: infrastructure/docker/docker-compose.yml
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Compose configuration
+        run: docker compose -f "$COMPOSE_FILE" config --quiet
+
+      - name: Build container images
+        run: docker compose -f "$COMPOSE_FILE" build
+
+      - name: Start PostgreSQL and Redis
+        run: docker compose -f "$COMPOSE_FILE" up -d --wait postgres redis
+
+      - name: Apply Alembic migrations to clean PostgreSQL
+        run: docker compose -f "$COMPOSE_FILE" run --rm --no-deps backend uv run alembic upgrade head
+
+      - name: Start application containers
+        run: docker compose -f "$COMPOSE_FILE" up -d --wait backend frontend
+
+      - name: Verify backend readiness
+        run: curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 1 http://localhost:8000/health
+
+      - name: Verify frontend response
+        run: curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 1 http://localhost:3000/
+
+      - name: Clean up Docker resources
+        if: always()
+        run: docker compose -f "$COMPOSE_FILE" down --volumes --remove-orphans

@@ -1,44 +1,86 @@
 name: Bug Report
-description: Create a bug report to help improve Kontexa
+description: Report a reproducible problem in Kontexa
 title: "[BUG]: "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thank you for reporting an issue! Please fill out the sections below.
+        Thank you for helping improve Kontexa. Please search for an existing issue before filing a new one.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected area
+      options:
+        - Backend
+        - Frontend
+        - Database
+        - Infrastructure / Docker
+        - CI/CD
+        - Documentation
+        - Integration
+        - Other
+    validations:
+      required: true
 
   - type: textarea
     id: description
     attributes:
-      label: Bug Description
-      description: A clear and concise description of the bug.
+      label: Bug description
+      description: Describe the problem and its impact.
     validations:
       required: true
 
   - type: textarea
     id: reproduction
     attributes:
-      label: Steps to Reproduce
-      description: Detailed steps to reproduce the behavior.
+      label: Steps to reproduce
+      description: Provide the smallest set of steps that reliably shows the problem.
       placeholder: |
-        1. Run '...'
-        2. Execute '...'
-        3. See error
+        1. ...
+        2. ...
+        3. ...
     validations:
       required: true
 
   - type: textarea
     id: expected
     attributes:
-      label: Expected Behavior
-      description: What you expected to happen.
+      label: Expected behavior
     validations:
       required: true
 
   - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment and version
+      description: Include OS, browser/runtime, and branch, release, or commit when known.
+
+  - type: textarea
     id: logs
     attributes:
-      label: Logs & Output
-      description: Copy relevant logs or terminal output.
+      label: Relevant logs or output
+      description: Remove passwords, API keys, tokens, credentials, private connection strings, and other secrets before posting.
       render: shell
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add screenshots, links, or other details that could help investigate.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched for existing issues and did not find a duplicate.
+          required: true

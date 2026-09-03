@@ -1,26 +1,62 @@
 name: Feature Request
-description: Suggest a new feature or enhancement for Kontexa
+description: Propose a focused improvement to Kontexa
 title: "[FEAT]: "
 labels: ["enhancement"]
 body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected area
+      options:
+        - Backend
+        - Frontend
+        - Database
+        - Infrastructure / Docker
+        - CI/CD
+        - Documentation
+        - Integration
+        - Other
+
   - type: textarea
     id: problem
     attributes:
-      label: Problem Context
-      description: Is your feature request related to a specific problem or workflow friction?
+      label: Problem or workflow friction
+      description: Describe the user or developer problem this would solve.
     validations:
       required: true
 
   - type: textarea
     id: solution
     attributes:
-      label: Proposed Solution
-      description: Clear description of what you want to happen.
+      label: Proposed solution
+      description: Describe the desired outcome, not a full implementation plan.
     validations:
       required: true
 
   - type: textarea
+    id: benefit
+    attributes:
+      label: Expected benefit
+      description: Explain the expected user or developer value.
+
+  - type: textarea
     id: alternatives
     attributes:
-      label: Alternatives Considered
-      description: Any alternative solutions or workarounds considered.
+      label: Alternatives or workarounds considered
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+      description: Optional. Identify intentionally excluded behavior if useful.
+
+  - type: input
+    id: roadmap
+    attributes:
+      label: Related roadmap item
+      description: Optional. Link a relevant existing roadmap item if known.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
