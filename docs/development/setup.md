@@ -1,85 +1,81 @@
-# Local Development Setup Guide
-
-This guide walks through setting up the Kontexa repository for local development.
-
----
+# Local Development Setup
 
 ## Prerequisites
 
-Ensure the following tools are installed on your machine:
+- Python 3.12 or newer and `uv`
+- Node.js 20 or newer and npm
+- Docker with Docker Compose
+- GNU Make or a compatible `make` implementation
 
-- **Python**: 3.12 or newer
-- **uv**: Python package and environment manager (`uv --version`)
-- **Node.js**: LTS version (`v20+` or `v24+`)
-- **Docker & Docker Compose**: For local PostgreSQL and Redis services
-- **Make**: Build and development task automation
+## Configure local environment files
 
----
-
-## Step-by-Step Setup
-
-### 1. Environment Files
-
-Copy the example environment configuration files:
+Copy the example files if you want local overrides:
 
 ```bash
-# Root environment file
 cp .env.example .env
-
-# Backend environment file
 cp backend/.env.example backend/.env
-
-# Frontend environment file
 cp frontend/.env.example frontend/.env
 ```
 
-### 2. Dependency Installation
+Before running the backend locally, add or uncomment `DATABASE_URL` in `backend/.env`. The backend
+loads `.env` from the `backend/` working directory, so the root `.env` alone is insufficient for
+`make dev`. The default local URL is documented in the commented example line. `REDIS_URL` defaults
+to `redis://localhost:6379/0` if not supplied.
 
-Install dependencies for both Python (via `uv`) and Node.js (via `npm`):
+For every supported variable and its runtime behavior, see [../CONFIGURATION.md](../CONFIGURATION.md).
+
+## Install dependencies
 
 ```bash
 make setup
 ```
 
-Alternatively, install individually:
+This runs `uv sync` in `backend/` and `npm install` in `frontend/`. The individual equivalents are:
 
 ```bash
-# Backend dependencies
 cd backend && uv sync
-
-# Frontend dependencies
 cd frontend && npm install
 ```
 
-### 3. Start Local Infrastructure
-
-Boot the local PostgreSQL (with `pgvector`) and Redis containers:
+## Run the full containerized stack
 
 ```bash
 make up
 ```
 
-Verify containers are running:
+This runs `docker compose -f infrastructure/docker/docker-compose.yml up -d` and starts
+PostgreSQL, Redis, backend, and frontend. The services are available at ports 5432, 6379, 8000, and
+3000 respectively. Check them with:
 
 ```bash
 docker compose -f infrastructure/docker/docker-compose.yml ps
 ```
 
-### 4. Running Development Servers
+Stop the stack with `make down`.
 
-Start both frontend and backend development servers using Make:
+## Run frontend and backend locally
+
+Start the services in separate terminals after PostgreSQL and Redis are available:
 
 ```bash
-make dev
+cd backend && uv run uvicorn kontexa.main:app --reload --port 8000
 ```
 
-Or start them manually in separate terminals:
+```bash
+cd frontend && npm run dev
+```
 
-- **Backend** (FastAPI at `http://localhost:8000`):
-  ```bash
-  cd backend && uv run uvicorn kontexa.main:app --reload --port 8000
-  ```
-- **Frontend** (Next.js at `http://localhost:3000`):
-  ```bash
-  cd frontend && npm run dev
-  ```
+`make dev` starts those same commands together. The local frontend defaults to a rewrite target of
+`http://localhost:8000`. Visit `http://localhost:3000` to see the status dashboard; it polls
+`/api/health` and shows the readiness result.
+
+## Apply the schema
+
+The Docker Compose database does not run Alembic migrations automatically. To create the application
+schema in a configured database, run from `backend/`:
+
+```bash
+uv run alembic upgrade head
+```
+
+See [../DATABASE.md](../DATABASE.md) before using the Aiven-only bootstrap SQL file.

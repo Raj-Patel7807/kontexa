@@ -1,72 +1,48 @@
 # Kontexa
 
-Kontexa is an AI workspace for software engineers designed to streamline codebase understanding, context retrieval, and developer workflows.
+Kontexa is an early-stage AI workspace for software engineers. It is intended to help teams
+understand codebases, retain useful context, and support developer workflows in project-scoped
+workspaces.
 
-## Status
+## Current status
 
-Foundation / early development. The repository currently contains the core engineering foundation, project tooling, and containerization setup. Product features are not yet implemented.
+The repository provides an engineering foundation rather than the finished product. Today it
+includes a Next.js status dashboard, a FastAPI readiness API, PostgreSQL and Redis connectivity
+checks, an initial PostgreSQL schema, local Docker Compose orchestration, and CI checks.
 
-## Tech Stack
+Authentication, workspace and project APIs, chat, AI-provider calls, document ingestion, and RAG
+are planned; their database tables do not mean those product capabilities are available yet.
 
-- **Frontend**: Next.js, React, TypeScript, Tailwind CSS, ESLint
-- **Backend**: Python 3.12+, FastAPI, Pydantic, SQLAlchemy 2.x, Alembic, `uv`, Ruff, `pytest`
-- **Database & Storage**: PostgreSQL (with `pgvector`), Redis
-- **Infrastructure & Tooling**: Docker, Docker Compose, Pre-commit, GitHub Actions
-
-## Project Structure
+## Repository layout
 
 ```text
-kontexa/
-├── .github/          # CI/CD workflows and issue/PR templates
-├── frontend/         # Next.js web application
-├── backend/          # FastAPI backend (modular monolith)
-├── packages/         # Reserved for shared internal libraries
-├── infrastructure/   # Docker configurations and local services setup
-├── docs/             # Technical architecture, code rules, and developer setup
-└── scripts/          # Developer automation utility scripts
+backend/                 FastAPI application, Alembic migrations, and pytest tests
+frontend/                Next.js application
+infrastructure/database/ Manual schema for a new Aiven PostgreSQL service
+infrastructure/docker/   Dockerfiles and local Docker Compose stack
+docs/                    Product, architecture, development, and decision documentation
+scripts/                 Small developer utilities
 ```
 
-## Development
+## Local development
 
-The project includes a root `Makefile` for common management commands:
+See the [setup guide](docs/development/setup.md). The common commands are:
 
 ```bash
-# Install backend and frontend dependencies
 make setup
-
-# Start local Docker infrastructure (PostgreSQL + Redis)
 make up
-
-# Stop Docker infrastructure
-make down
-
-# Run backend pytest suite and frontend type checks
-make test
-
-# Run linter checks (Ruff & ESLint)
+make dev
 make lint
-
-# Format backend codebase
-make format
+make test
 ```
 
-## Readiness endpoint
-
-The backend exposes `GET /health` (and `GET /api/v1/health`) for operational checks. It verifies
-PostgreSQL and Redis using the configured application connections, then returns the service version,
-environment, UTC timestamp, and per-dependency latency. It returns HTTP 200 when ready and HTTP 503
-with `"status": "degraded"` when either required dependency is unavailable.
+`make up` starts the complete containerized stack: PostgreSQL, Redis, backend, and frontend.
+`make dev` starts the backend and frontend locally, so configure `backend/.env` first.
 
 ## Documentation
 
-Detailed repository documentation is available in the `docs/` directory:
-
-- [Code Rules & Standards](docs/CODE_RULES.md)
-- [System Architecture](docs/ARCHITECTURE.md)
-- [Architecture Decision Records (ADRs)](docs/decisions/README.md)
-- [Local Setup Guide](docs/development/setup.md)
-- [Testing Guide](docs/development/testing.md)
-- [Agent Instructions](AGENTS.md)
+Start with the [documentation index](docs/README.md). It links the product requirements,
+architecture, flows, configuration reference, database reference, roadmap, and decisions.
 
 ## License
 

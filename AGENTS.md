@@ -5,7 +5,8 @@
 Before making changes:
 
 - Read `docs/CODE_RULES.md` before writing or refactoring code.
-- Read `docs/ROADMAP.md`, `docs/DATABASE` and `docs/ARCHITECTURE.md` before making architectural changes.
+- Read `docs/ROADMAP.md`, `docs/DATABASE.md`, and `docs/ARCHITECTURE.md` before making
+  architectural changes.
 
 ## Engineering Principles
 
