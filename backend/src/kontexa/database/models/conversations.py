@@ -16,6 +16,7 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "conversations"
     __table_args__ = (
         Index("idx_conversations_workspace", "workspace_id"),
+        Index("idx_conversations_project", "project_id"),
         Index("idx_conversations_deleted", "deleted_at", postgresql_where="deleted_at IS NULL"),
     )
 

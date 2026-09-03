@@ -15,6 +15,7 @@ class Tool(UUIDPrimaryKeyMixin, Base):
     """Custom action or tool defined per project (e.g. web search, code executor)."""
 
     __tablename__ = "tools"
+    __table_args__ = (Index("idx_tools_project", "project_id"),)
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

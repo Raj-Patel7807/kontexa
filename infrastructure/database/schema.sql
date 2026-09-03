@@ -22,7 +22,7 @@ CREATE INDEX idx_users_deleted ON users (deleted_at) WHERE deleted_at IS NULL;
 
 CREATE TABLE workspaces (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
     slug TEXT NOT NULL UNIQUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -64,6 +64,7 @@ CREATE TABLE conversations (
     deleted_at TIMESTAMPTZ
 );
 CREATE INDEX idx_conversations_workspace ON conversations (workspace_id);
+CREATE INDEX idx_conversations_project ON conversations (project_id);
 CREATE INDEX idx_conversations_deleted ON conversations (deleted_at) WHERE deleted_at IS NULL;
 
 CREATE TABLE messages (
@@ -82,9 +83,9 @@ CREATE TABLE message_parts (
     message_id UUID NOT NULL REFERENCES messages (id) ON DELETE CASCADE,
     part_index INTEGER NOT NULL,
     content TEXT,
-    mime_type VARCHAR(50)
+    mime_type VARCHAR(50),
+    CONSTRAINT uq_message_parts_message_id_part_index UNIQUE (message_id, part_index)
 );
-CREATE INDEX idx_message_parts_msg ON message_parts (message_id);
 
 CREATE TABLE documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -93,6 +94,7 @@ CREATE TABLE documents (
     metadata JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE INDEX idx_documents_project ON documents (project_id);
 
 CREATE TABLE document_versions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -100,6 +102,7 @@ CREATE TABLE document_versions (
     content TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE INDEX idx_document_versions_document ON document_versions (document_id);
 
 CREATE TABLE document_chunks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -107,9 +110,10 @@ CREATE TABLE document_chunks (
     chunk_index INTEGER NOT NULL,
     content TEXT NOT NULL,
     embedding VECTOR(1536),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_document_chunks_document_version_id_chunk_index
+        UNIQUE (document_version_id, chunk_index)
 );
-CREATE INDEX idx_chunks_doc_version ON document_chunks (document_version_id);
 CREATE INDEX idx_chunks_embedding ON document_chunks
     USING ivfflat (embedding vector_l2_ops) WITH (lists = 100);
 
@@ -128,7 +132,7 @@ CREATE INDEX idx_integrations_workspace ON integrations (workspace_id);
 CREATE TABLE memory_entries (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,
-    user_id UUID,
+    user_id UUID REFERENCES users (id) ON DELETE SET NULL,
     key TEXT,
     content TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -142,6 +146,7 @@ CREATE TABLE tools (
     config JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE INDEX idx_tools_project ON tools (project_id);
 
 CREATE TABLE agent_runs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -166,9 +171,9 @@ CREATE TABLE ai_models (
     provider_id UUID NOT NULL REFERENCES ai_providers (id) ON DELETE CASCADE,
     model_name TEXT NOT NULL,
     max_tokens INTEGER,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_ai_models_provider_id_model_name UNIQUE (provider_id, model_name)
 );
-CREATE INDEX idx_ai_models_provider ON ai_models (provider_id);
 
 CREATE TABLE ai_usage (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
