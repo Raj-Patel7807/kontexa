@@ -1,4 +1,4 @@
-"""Health check API endpoints for application status verification."""
+"""Health, liveness, and readiness API endpoints for application status verification."""
 
 import asyncio
 from datetime import UTC, datetime
@@ -13,6 +13,20 @@ from kontexa.database.redis import check_redis_connection
 from kontexa.database.session import check_database_connection
 
 router = APIRouter(tags=["Health"])
+
+
+class LivenessResponse(BaseModel):
+    """Schema representing the process liveness state without external dependency checks."""
+
+    status: Literal["ok"] = Field(
+        default="ok", description="Process liveness indicator", json_schema_extra={"example": "ok"}
+    )
+    service: str = Field(
+        description="Stable service identifier", json_schema_extra={"example": "kontexa"}
+    )
+    version: str = Field(
+        description="Backend application version", json_schema_extra={"example": "0.1.0"}
+    )
 
 
 class DependencyHealthResponse(BaseModel):
@@ -44,12 +58,51 @@ class HealthResponse(BaseModel):
 
 
 @router.get(
+    "/live",
+    response_model=LivenessResponse,
+    summary="Application liveness probe",
+    description="Fast process-level liveness probe without probing external dependencies.",
+)
+@router.get(
+    "/api/v1/live",
+    response_model=LivenessResponse,
+    summary="API v1 liveness probe",
+    description="Fast process-level liveness probe without probing external dependencies.",
+)
+async def liveness_check() -> LivenessResponse:
+    """Return process liveness state to container orchestrators."""
+    return LivenessResponse(
+        status="ok",
+        service="kontexa",
+        version=settings.app_version,
+    )
+
+
+@router.get(
+    "/ready",
+    response_model=HealthResponse,
+    responses={
+        503: {"model": HealthResponse, "description": "A required dependency is unavailable"}
+    },
+    summary="Application readiness probe",
+    description="Evaluates whether PostgreSQL and Redis are ready to serve incoming traffic.",
+)
+@router.get(
+    "/api/v1/ready",
+    response_model=HealthResponse,
+    responses={
+        503: {"model": HealthResponse, "description": "A required dependency is unavailable"}
+    },
+    summary="API v1 readiness probe",
+    description="Evaluates whether PostgreSQL and Redis are ready to serve incoming traffic.",
+)
+@router.get(
     "/health",
     response_model=HealthResponse,
     responses={
         503: {"model": HealthResponse, "description": "A required dependency is unavailable"}
     },
-    summary="Application readiness check",
+    summary="Application health and readiness check",
 )
 @router.get(
     "/api/v1/health",
@@ -57,7 +110,7 @@ class HealthResponse(BaseModel):
     responses={
         503: {"model": HealthResponse, "description": "A required dependency is unavailable"}
     },
-    summary="API v1 readiness check",
+    summary="API v1 health and readiness check",
 )
 async def health_check(response: Response) -> HealthResponse:
     """Report backend readiness with live PostgreSQL and Redis dependency checks."""

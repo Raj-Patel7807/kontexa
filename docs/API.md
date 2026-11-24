@@ -36,14 +36,34 @@ Kontexa exposes a RESTful HTTP API built with FastAPI. All public endpoints adhe
 
 ## 2. Active Implemented Endpoints
 
-### `GET /health` & `GET /api/v1/health`
+### `GET /live` & `GET /api/v1/live`
 
-Reports application readiness by concurrently probing PostgreSQL and Redis dependencies.
+Fast process-level liveness probe returning `200 OK` without querying external databases or caches. Used by Kubernetes/ECS liveness probes.
 
-- **URL**: `/health` or `/api/v1/health`
+- **URL**: `/live` or `/api/v1/live`
+- **Method**: `GET`
+- **Authentication**: None
+- **Response Headers**: `Content-Type: application/json`, `X-Request-ID: <uuid>`
+
+#### Successful Response (`200 OK`)
+```json
+{
+  "status": "ok",
+  "service": "kontexa",
+  "version": "0.1.0"
+}
+```
+
+---
+
+### `GET /ready` & `GET /api/v1/ready` / `GET /health` & `GET /api/v1/health`
+
+Reports application readiness by concurrently probing PostgreSQL and Redis dependencies. Used by orchestrator readiness probes to gate inbound traffic.
+
+- **URL**: `/ready`, `/api/v1/ready`, `/health`, or `/api/v1/health`
 - **Method**: `GET`
 - **Authentication**: None (Public readiness probe)
-- **Response Headers**: `Content-Type: application/json`
+- **Response Headers**: `Content-Type: application/json`, `X-Request-ID: <uuid>`
 
 #### Successful Response (`200 OK`)
 ```json

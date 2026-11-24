@@ -47,13 +47,13 @@ To avoid building shallow integrations that provide little engineering value, co
   - Define testable acceptance criteria across all MVP capabilities.
 - **Sprint 03 — Architecture, ADRs and system contracts** `[COMPLETED]`
   - Target modular-monolith design, worker architecture, streaming contracts (SSE), connector interfaces, retrieval pipelines, AI gateway boundaries, and ADRs (ADR-010 through ADR-015).
-- **Sprint 04 — Final repository structure, local developer experience and CI** `[CURRENT SPRINT]`
+- **Sprint 04 — Final repository structure, local developer experience and CI** `[COMPLETED]`
   - Hardening layout, background worker foundation, Mypy type-checking, pre-commit hooks, Docker Compose with worker service, Makefile check runner, Gitleaks secret scanning in CI.
 
 ### Phase 2: Database, Tenancy & Application Shell (Sprints 05–09)
-- **Sprint 05 — Backend foundation and configuration**
-  - Pydantic Settings hardening, structured logging, request IDs, custom exception handlers.
-- **Sprint 06 — Database foundation and tenancy-ready schema**
+- **Sprint 05 — Backend foundation and configuration** `[COMPLETED]`
+  - Pydantic Settings hardening, production fail-fast validators, structured logging with correlation request IDs, custom exception hierarchy and handlers, OpenAPI tags, liveness/readiness probes.
+- **Sprint 06 — Database foundation and tenancy-ready schema** `[NEXT SPRINT]`
   - Finalize SQLAlchemy models and Alembic migrations; resolve composite foreign-key constraints; migration upgrade tests.
 - **Sprint 07 — Authentication, session management and identity**
   - User registration, password hashing/OAuth, session management, auth middleware, and protected endpoints.

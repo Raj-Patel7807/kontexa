@@ -120,3 +120,96 @@ def test_cors_origins_default() -> None:
         database_url="postgresql+asyncpg://test:test@localhost:5432/test_db",
     )
     assert s.cors_origins == ["http://localhost:3000"]
+    assert s.api_v1_prefix == "/api/v1"
+
+
+def test_production_fails_when_debug_is_enabled() -> None:
+    """Verify production environment rejects debug=True."""
+    import pytest
+
+    with pytest.raises(ValueError, match="DEBUG must be False in production environment"):
+        Settings(
+            _env_file=None,
+            app_env="production",
+            debug=True,
+            database_ssl_mode="require",
+            database_url="postgresql+asyncpg://user:pass@db.example.com:5432/db",
+            cors_origins=["https://app.kontexa.ai"],
+        )
+
+
+def test_production_fails_when_ssl_mode_is_disabled() -> None:
+    """Verify production environment rejects disabled database SSL mode."""
+    import pytest
+
+    with pytest.raises(
+        ValueError, match="DATABASE_SSL_MODE must be 'require' in production environment"
+    ):
+        Settings(
+            _env_file=None,
+            app_env="production",
+            debug=False,
+            database_ssl_mode="disable",
+            database_url="postgresql+asyncpg://user:pass@db.example.com:5432/db",
+            cors_origins=["https://app.kontexa.ai"],
+        )
+
+
+def test_production_fails_when_cors_contains_wildcard() -> None:
+    """Verify production environment rejects wildcard CORS origins."""
+    import pytest
+
+    with pytest.raises(ValueError, match=r"CORS wildcard '\*' is strictly prohibited"):
+        Settings(
+            _env_file=None,
+            app_env="production",
+            debug=False,
+            database_ssl_mode="require",
+            database_url="postgresql+asyncpg://user:pass@db.example.com:5432/db",
+            cors_origins=["*"],
+        )
+
+
+def test_production_fails_when_cors_contains_localhost() -> None:
+    """Verify production environment rejects localhost in CORS origins."""
+    import pytest
+
+    with pytest.raises(ValueError, match="is not permitted in production"):
+        Settings(
+            _env_file=None,
+            app_env="production",
+            debug=False,
+            database_ssl_mode="require",
+            database_url="postgresql+asyncpg://user:pass@db.example.com:5432/db",
+            cors_origins=["https://app.kontexa.ai", "http://localhost:3000"],
+        )
+
+
+def test_production_fails_when_database_points_to_localhost() -> None:
+    """Verify production environment rejects localhost database hostnames."""
+    import pytest
+
+    with pytest.raises(ValueError, match="DATABASE_URL must point to a remote managed database"):
+        Settings(
+            _env_file=None,
+            app_env="production",
+            debug=False,
+            database_ssl_mode="require",
+            database_url="postgresql+asyncpg://user:pass@127.0.0.1:5432/db",
+            cors_origins=["https://app.kontexa.ai"],
+        )
+
+
+def test_valid_production_settings_pass() -> None:
+    """Verify valid production settings instantiate without error."""
+    s = Settings(
+        _env_file=None,
+        app_env="production",
+        debug=False,
+        database_ssl_mode="require",
+        database_url="postgresql+asyncpg://user:pass@db.example.com:5432/db",
+        cors_origins=["https://app.kontexa.ai"],
+    )
+    assert s.app_env == "production"
+    assert s.debug is False
+    assert s.database_ssl_mode == "require"

@@ -17,9 +17,11 @@ This document provides a truthful, evidence-backed status report of all system c
 
 | Domain | Capability | Status | Evidence in Codebase | Notes / Missing Work |
 | :--- | :--- | :---: | :--- | :--- |
-| **Foundation** | Backend FastAPI Factory | **Implemented** | `backend/src/kontexa/main.py` | Complete app factory, CORS middleware, lifespan management. |
-| **Foundation** | Pydantic Settings & TLS | **Implemented** | `backend/src/kontexa/core/config.py` | Typed settings, Aiven SSL context generation. Covered in `test_config.py`. |
-| **Foundation** | Health & Readiness Checks | **Implemented** | `backend/src/kontexa/api/health.py`, `core/health.py` | Concurrent PostgreSQL & Redis ping, latency tracking, 503 on failure. Covered in `test_health.py`. |
+| **Foundation** | Backend FastAPI Factory | **Implemented** | `backend/src/kontexa/main.py` | Complete app factory, OpenAPI tags/metadata, CORS middleware, lifespan management. |
+| **Foundation** | Pydantic Settings & Fail-Fast | **Implemented** | `backend/src/kontexa/core/config.py` | Typed settings, production invariant validators, Aiven SSL context. Covered in `test_config.py`. |
+| **Foundation** | Structured Logging & Request IDs | **Implemented** | `backend/src/kontexa/core/logging.py` | ContextVar-backed `x-request-id` middleware, RequestIdFilter, response header propagation. |
+| **Foundation** | Global Exception Handlers | **Implemented** | `backend/src/kontexa/core/exceptions.py` | Domain hierarchy (`KontexaError`), masked 500s, standardized JSON `ErrorResponse`. |
+| **Foundation** | Health, Live & Readiness Probes | **Implemented** | `backend/src/kontexa/api/health.py`, `core/health.py` | Concurrent PostgreSQL & Redis ping, latency tracking, `/live` and `/ready` probes. Covered in `test_health.py`. |
 | **Foundation** | Background Worker Process | **Implemented** | `backend/src/kontexa/worker/main.py` | Worker lifecycle, dependency checks, graceful shutdown. Covered in `test_worker.py`. |
 | **Foundation** | Static Type Checking | **Implemented** | `backend/pyproject.toml` (mypy), `frontend/tsconfig.json` | 100% typechecked with Mypy and `tsc --noEmit`. Verified in CI. |
 | **Infrastructure** | Docker Compose Stack | **Implemented** | `infrastructure/docker/docker-compose.yml` | PostgreSQL 16 (pgvector), Redis 7, backend, worker, and frontend containers configured. |

@@ -80,3 +80,92 @@ async def test_api_v1_health_check_returns_the_same_readiness_payload(
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_liveness_check_returns_ok_without_touching_dependencies() -> None:
+    """Verify GET /live returns 200 OK immediately for process liveness probes."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/live")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["service"] == "kontexa"
+    assert "version" in data
+
+
+@pytest.mark.asyncio
+async def test_api_v1_liveness_check_returns_ok() -> None:
+    """Verify GET /api/v1/live returns 200 OK for versioned liveness probes."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/live")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_readiness_check_returns_200_when_dependencies_are_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify GET /ready returns 200 OK with full dependency health details."""
+
+    async def available() -> None:
+        """Represent a healthy dependency."""
+
+    monkeypatch.setattr(health_api, "check_database_connection", available)
+    monkeypatch.setattr(health_api, "check_redis_connection", available)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/ready")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["dependencies"]["database"]["status"] == "ok"
+    assert data["dependencies"]["redis"]["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_readiness_check_returns_503_when_dependency_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify GET /ready returns 503 degraded when a dependency is unreachable."""
+
+    async def available() -> None:
+        """Represent a healthy dependency."""
+
+    async def unavailable() -> None:
+        """Represent an unavailable dependency."""
+        raise RedisConnectionError("redis offline")
+
+    monkeypatch.setattr(health_api, "check_database_connection", available)
+    monkeypatch.setattr(health_api, "check_redis_connection", unavailable)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/ready")
+
+    assert response.status_code == 503
+    data = response.json()
+    assert data["status"] == "degraded"
+    assert data["dependencies"]["redis"]["status"] == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_api_v1_readiness_check_returns_200_when_dependencies_are_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify GET /api/v1/ready functions identically to the root readiness endpoint."""
+
+    async def available() -> None:
+        """Represent a healthy dependency."""
+
+    monkeypatch.setattr(health_api, "check_database_connection", available)
+    monkeypatch.setattr(health_api, "check_redis_connection", available)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/ready")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
