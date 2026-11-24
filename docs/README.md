@@ -32,8 +32,9 @@ For the definitive audit matrix, see [FEATURE_STATUS.md](FEATURE_STATUS.md).
 ## 3. Directory Navigation
 
 ### Product Specifications
-- [PRD.md](PRD.md) — Product requirements, user personas, problem statement, and MVP scope.
-- [ROADMAP.md](ROADMAP.md) — Sequenced 28-sprint implementation plan and release phases.
+- [PRD.md](PRD.md) — Product requirements, user personas, problem statement, core workflows, and MVP acceptance criteria.
+- [PRODUCT_SCOPE.md](PRODUCT_SCOPE.md) — Release definition, MVP acceptance checklist, Definition of Done, and deferred scope.
+- [ROADMAP.md](ROADMAP.md) — Sequenced 28-sprint implementation plan and connector phases.
 - [FEATURE_STATUS.md](FEATURE_STATUS.md) — Truthful status matrix for every system feature with codebase evidence.
 
 ### Architecture & Design

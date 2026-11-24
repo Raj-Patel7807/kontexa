@@ -2,31 +2,49 @@
 
 This roadmap outlines the complete, sequenced 28-sprint plan to transition Kontexa from its initial architectural foundation into a fully operational AI Software Engineering Workspace.
 
+See [docs/PRD.md](PRD.md) for product requirements and [docs/PRODUCT_SCOPE.md](PRODUCT_SCOPE.md) for MVP scope boundaries and acceptance criteria.
+
 ---
 
-## Roadmap Phases
+## Release Milestones & Phases
 
 ```mermaid
 flowchart LR
-    P1["Phase 1: Foundation (Sprints 1-4)"] --> P2["Phase 2: Core Platform (Sprints 5-9)"]
-    P2 --> P3["Phase 3: AI & Knowledge (Sprints 10-14)"]
-    P3 --> P4["Phase 4: GitHub & Code Intelligence (Sprints 15-18)"]
-    P4 --> P5["Phase 5: Agent Execution (Sprints 19-21)"]
-    P5 --> P6["Phase 6: Cross-Context & Polish (Sprints 22-25)"]
-    P6 --> P7["Phase 7: Deployment & Release (Sprints 26-28)"]
+    P1["Phase 1: Foundation<br/>(Sprints 1-4)"] --> P2["Phase 2: Core Platform<br/>(Sprints 5-9)"]
+    P2 --> P3["Phase 3: AI & Knowledge<br/>(Sprints 10-14)"]
+    P3 --> P4["Phase 4: GitHub Intelligence<br/>(Sprints 15-18)"]
+    P4 --> P5["Phase 5: Agent Execution<br/>(Sprints 19-21)"]
+    P5 --> P6["Phase 6: Cross-Context<br/>(Sprints 22-25)"]
+    P6 --> P7["Phase 7: Production Release<br/>(Sprints 26-28)"]
 ```
+
+---
+
+## Connector Roadmap Across Phases
+
+To avoid building shallow integrations that provide little engineering value, connector rollouts are sequenced strictly by phase:
+
+1. **Phase 1 (MVP)**: **GitHub** (deep connector: file tree sync, AST symbol parsing, commit history, draft PR creation) and **Linear/Jira** (secondary connector: reading tickets, issue state, cross-source link demo).
+2. **Phase 2**: **Slack & Discord** (channels, threads, decision context linking).
+3. **Phase 3**: **Notion & Confluence** (knowledge wikis, architecture RFCs).
+4. **Phase 4**: **Gmail & Outlook** (incident communications, release notices with data redaction).
+5. **Phase 5**: **Sentry & Datadog** (error traces, incident alert correlation).
+6. **Phase 6**: **GitLab & Bitbucket** (multi-VCS enterprise support).
 
 ---
 
 ## Sprint Breakdown
 
 ### Phase 1: Repository Foundation, Product & Architecture (Sprints 01–04)
-- **Sprint 01 — Repository audit and documentation reset** `[CURRENT SPRINT]`
+- **Sprint 01 — Repository audit and documentation reset** `[COMPLETED]`
   - End-to-end audit of code, tests, migrations, Docker, CI, and docs.
   - Comprehensive documentation reset: README, PRD, Roadmap, Feature Status, Architecture, Decisions, API, Security, Code Rules.
   - Status classification: Implemented, Partial, Planned, Deprecated.
-- **Sprint 02 — Product scope, personas and release definition**
-  - Refine personas, user journeys, permissions model, and testable acceptance criteria for MVP.
+- **Sprint 02 — Product scope, personas and release definition** `[CURRENT SPRINT]`
+  - Define personas, jobs-to-be-done, core workflows, user journeys (A–F), permissions matrix, retention policy, success metrics, and non-goals.
+  - Separate long-term ecosystem vision from first-release MVP scope.
+  - Define connector roadmap (GitHub deep connector; Linear/Jira secondary; Slack/Gmail/Notion/Sentry deferred).
+  - Define testable acceptance criteria across all MVP capabilities.
 - **Sprint 03 — Architecture, ADRs and system contracts**
   - Target modular-monolith design, streaming contracts (SSE), connector interfaces, retrieval pipelines, AI gateway boundaries.
 - **Sprint 04 — Final repository structure, local developer experience and CI**
@@ -76,7 +94,7 @@ flowchart LR
 
 ### Phase 6: Cross-Source Context & Hardening (Sprints 22–25)
 - **Sprint 22 — Secondary engineering connector**
-  - Connect second engineering data source (e.g. Linear, Slack, or Jira); ingest metadata, sync jobs.
+  - Connect second engineering data source (Linear or Jira); ingest metadata, sync jobs.
 - **Sprint 23 — Cross-source context graph and correlation**
   - Correlate issues, PRs, commits, and discussions; demonstrate end-to-end multi-source investigation query.
 - **Sprint 24 — Security hardening, audit logging and secret protection**

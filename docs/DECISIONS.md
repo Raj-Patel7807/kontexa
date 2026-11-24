@@ -80,3 +80,13 @@ This document records the foundational architecture and engineering decisions es
 - **Consequences**:
   - *Positive*: Prevents hallucinated commands or unauthorized mutations; safe for sensitive repositories.
   - *Negative*: Requires UI approval flows and prevents 100% hands-off automation.
+
+---
+
+## ADR-009: Phased Connector Strategy with GitHub as Deep MVP Connector
+- **Status**: Accepted
+- **Context**: The long-term product vision encompasses a wide ecosystem (code, chat, email, project management, wikis, and observability). Attempting to build 10+ connectors simultaneously in the first release would result in shallow, fragile integrations that provide minimal developer value.
+- **Decision**: Focus first-release engineering strictly on GitHub as a deep connector (repository sync, AST symbol extraction, commit history, file/line citations, and draft PR creation), accompanied by exactly one secondary connector (Linear or Jira) to demonstrate cross-source context correlation. Defer Slack, Discord, Notion, Confluence, Gmail, Outlook, Sentry, Datadog, and additional VCS providers to subsequent phases.
+- **Consequences**:
+  - *Positive*: Delivers a cohesive, high-utility developer experience for code intelligence before expanding integration breadth; limits security attack surface and OAuth management complexity.
+  - *Negative*: Users requesting communication or observability connectors must wait for subsequent phases.
