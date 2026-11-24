@@ -90,3 +90,65 @@ This document records the foundational architecture and engineering decisions es
 - **Consequences**:
   - *Positive*: Delivers a cohesive, high-utility developer experience for code intelligence before expanding integration breadth; limits security attack surface and OAuth management complexity.
   - *Negative*: Users requesting communication or observability connectors must wait for subsequent phases.
+
+---
+
+## ADR-010: Server-Sent Events (SSE) for Real-Time Streaming
+- **Status**: Accepted
+- **Context**: The conversational assistant requires real-time token streaming to deliver responsive UX with minimal time-to-first-token. Transport candidates include WebSockets, Server-Sent Events (SSE), and HTTP chunked transfer.
+- **Decision**: Adopt Server-Sent Events (SSE) via `text/event-stream` over standard HTTP.
+- **Consequences**:
+  - *Positive*: Works out-of-the-box over standard HTTP/2, corporate firewalls, and Vercel proxy rewrites; passes standard HttpOnly session cookies without custom handshake auth; native browser reconnect handling via `EventSource`; half-duplex nature matches the request-response conversational pattern.
+  - *Negative*: Unidirectional from server to client; client cancellations require an explicit HTTP cancellation request or socket drop.
+
+---
+
+## ADR-011: HttpOnly Secure Cookie-Based Session Architecture with Redis Lookup
+- **Status**: Accepted
+- **Context**: Authentication tokens stored in browser `localStorage` or `sessionStorage` are vulnerable to exfiltration via Cross-Site Scripting (XSS). Pure stateless JWTs cannot be revoked immediately upon logout or compromise.
+- **Decision**: Issue random, cryptographically secure 256-bit session tokens stored in `HttpOnly`, `SameSite=Lax`, `Secure` browser cookies. Cache session profiles in Redis (900-second sliding TTL) with PostgreSQL backup.
+- **Consequences**:
+  - *Positive*: Complete immunity against JavaScript-based token theft (XSS); instant session revocation via `redis.delete()`; sub-millisecond session validation on hot requests.
+  - *Negative*: Requires stateful session management and Redis availability.
+
+---
+
+## ADR-012: Decoupled Worker Process for Background Tasks
+- **Status**: Accepted
+- **Context**: Operations such as repository synchronization, AST symbol parsing, document embedding, and sandboxed test execution require significant CPU and wall-clock time (10s to 5 minutes). Running these inside FastAPI async request handlers blocks event loops and triggers HTTP gateway timeouts.
+- **Decision**: Run a dedicated background worker process sharing the codebase, PostgreSQL database, and Redis task queue. The web API enqueues tasks; the worker executes them asynchronously.
+- **Consequences**:
+  - *Positive*: Web API maintains sub-100ms response times; workers can be scaled independently on Render/Railway based on queue depth; sandbox execution failures cannot crash the web API.
+  - *Negative*: Requires running and monitoring a secondary container process in deployment.
+
+---
+
+## ADR-013: Hybrid Vector and Lexical Retrieval Strategy with RRF
+- **Status**: Accepted
+- **Context**: Pure vector search struggles with exact code identifiers, class names, and error strings (e.g. `test_models_initialization`). Pure lexical search fails on conceptual queries (e.g. "how are session tokens verified").
+- **Decision**: Implement hybrid retrieval combining `pgvector` cosine similarity search with PostgreSQL trigram (`pg_trgm`) and full-text search (`tsvector`), merged via Reciprocal Rank Fusion (RRF).
+- **Consequences**:
+  - *Positive*: Superior recall and precision across both conceptual questions and exact code symbol inquiries; all search operations remain within the single PostgreSQL database.
+  - *Negative*: Requires creating and maintaining both vector IVFFlat indexes and GIN/trigram text indexes.
+
+---
+
+## ADR-014: Two-Phase Hash-Bound Agent Approval Model
+- **Status**: Accepted
+- **Context**: Allowing autonomous AI agents to modify code, execute terminal commands, or push git branches without human review creates intolerable risks of hallucination, accidental deletion, or prompt injection exploitation.
+- **Decision**: Enforce a mandatory two-phase workflow for all mutating agent tasks:
+  1. *Planning Phase*: The agent generates an execution manifest (diff hunks, file targets, shell commands) and computes `plan_hash = SHA256(canonical_manifest)`.
+  2. *Execution Phase*: Execution is rejected unless the developer submits a signed approval containing the identical `plan_hash`.
+- **Consequences**:
+  - *Positive*: Cryptographically guarantees that what the developer saw and approved is strictly what executes; prevents unauthorized drift or command injection.
+  - *Negative*: Requires an interactive UI approval step, preventing fully autonomous unattended execution.
+
+---
+
+## ADR-015: URL Path-Based API Versioning (`/api/v1/`)
+- **Status**: Accepted
+- **Context**: System contracts must evolve predictably without breaking web clients or integrations.
+- **Decision**: Prefix all domain, entity, and product endpoints with `/api/v1/`. Health checks retain `/health` and `/api/v1/health`.
+- **Consequences**:
+  - *Positive*: Explicit contract boundaries, straightforward router modularity in FastAPI, clear deprecation path for future breaking changes.
+  - *Negative*: URL paths include explicit version segments.

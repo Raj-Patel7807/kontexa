@@ -40,13 +40,13 @@ To avoid building shallow integrations that provide little engineering value, co
   - End-to-end audit of code, tests, migrations, Docker, CI, and docs.
   - Comprehensive documentation reset: README, PRD, Roadmap, Feature Status, Architecture, Decisions, API, Security, Code Rules.
   - Status classification: Implemented, Partial, Planned, Deprecated.
-- **Sprint 02 — Product scope, personas and release definition** `[CURRENT SPRINT]`
+- **Sprint 02 — Product scope, personas and release definition** `[COMPLETED]`
   - Define personas, jobs-to-be-done, core workflows, user journeys (A–F), permissions matrix, retention policy, success metrics, and non-goals.
   - Separate long-term ecosystem vision from first-release MVP scope.
   - Define connector roadmap (GitHub deep connector; Linear/Jira secondary; Slack/Gmail/Notion/Sentry deferred).
   - Define testable acceptance criteria across all MVP capabilities.
-- **Sprint 03 — Architecture, ADRs and system contracts**
-  - Target modular-monolith design, streaming contracts (SSE), connector interfaces, retrieval pipelines, AI gateway boundaries.
+- **Sprint 03 — Architecture, ADRs and system contracts** `[CURRENT SPRINT]`
+  - Target modular-monolith design, worker architecture, streaming contracts (SSE), connector interfaces, retrieval pipelines, AI gateway boundaries, and ADRs (ADR-010 through ADR-015).
 - **Sprint 04 — Final repository structure, local developer experience and CI**
   - Hardening layout, task runners, pre-commit hooks, dependency caching, reproducible lockfiles.
 
