@@ -1,42 +1,53 @@
-# Kontexa Documentation
+# Kontexa Documentation Index
 
-This directory is the entry point for understanding Kontexa. Current behavior is defined by the
-repository implementation, configuration, migrations, and tests; documents describe that behavior
-and the intended direction.
+Welcome to the Kontexa technical documentation. This directory provides the definitive specifications, architecture designs, data models, engineering standards, and operational guidelines for Kontexa.
 
-## Product
+---
 
-- [PRD.md](PRD.md) — product purpose, users, scope, requirements, and the current product status.
-- [FLOW.md](FLOW.md) — current and planned request, data, and failure flows.
+## 1. Documentation Source-of-Truth Hierarchy
 
-## Architecture and data
+To prevent divergence between written documentation and actual system capabilities:
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — current system boundaries and planned architectural direction.
-- [DATABASE.md](DATABASE.md) — implemented schema artifacts, relationships, and database limits.
-- [CONFIGURATION.md](CONFIGURATION.md) — environment variables and configuration behavior.
+1. **Code & Alembic Migrations**: Absolute source of truth for runtime behavior and database schema.
+2. **Automated Tests & CI**: Source of truth for verified invariants and operational readiness.
+3. **API Contracts**: Source of truth for input/output payloads and status codes.
+4. **Current Documentation (`docs/`)**: Source of truth for architecture boundaries, design decisions, and requirements.
+5. **Sprint Prompts & Notes**: Historical planning context.
 
-## Engineering
+---
 
-- [CODE_RULES.md](CODE_RULES.md) — engineering standards and code-quality rules.
-- [development/setup.md](development/setup.md) — prerequisites and local development setup.
-- [development/testing.md](development/testing.md) — local and CI verification commands.
+## 2. Status Label Definitions
 
-## Decisions and planning
+Every capability described in the documentation is labeled with one of four statuses:
 
-- [DECISIONS.md](DECISIONS.md) — concise record of established architectural decisions.
-- [ROADMAP.md](ROADMAP.md) — ordered, explicitly planned product work.
+- **`Implemented`**: Fully operational in code, reachable via user interface or active API endpoints, verified by automated tests.
+- **`Partial`**: Scaffolding, database schema, or infrastructure components exist in the repository, but user-facing or complete end-to-end workflows are not yet functional or fully wired.
+- **`Planned`**: Formally specified in the PRD and sequenced in the Roadmap; no working user-reachable implementation exists yet.
+- **`Deprecated`**: Phased out or superseded legacy artifacts.
 
-## Security
+For the definitive audit matrix, see [FEATURE_STATUS.md](FEATURE_STATUS.md).
 
-- [../SECURITY.md](../SECURITY.md) — private vulnerability-reporting process.
+---
 
-## Documentation source of truth
+## 3. Directory Navigation
 
-- Implementation, configuration, migrations, and tests define current behavior.
-- [PRD.md](PRD.md) defines product requirements and why they matter.
-- [ROADMAP.md](ROADMAP.md) defines planned sequencing.
-- [ARCHITECTURE.md](ARCHITECTURE.md) defines system boundaries.
-- [DATABASE.md](DATABASE.md) documents database architecture and schema artifacts.
-- [FLOW.md](FLOW.md) documents request and data flows.
-- [DECISIONS.md](DECISIONS.md) records important decisions and their reasoning.
-- [CODE_RULES.md](CODE_RULES.md) defines engineering standards.
+### Product Specifications
+- [PRD.md](PRD.md) — Product requirements, user personas, problem statement, and MVP scope.
+- [ROADMAP.md](ROADMAP.md) — Sequenced 28-sprint implementation plan and release phases.
+- [FEATURE_STATUS.md](FEATURE_STATUS.md) — Truthful status matrix for every system feature with codebase evidence.
+
+### Architecture & Design
+- [ARCHITECTURE.md](ARCHITECTURE.md) — System boundaries, container structure, modular monolith design, and Mermaid diagrams.
+- [FLOW.md](FLOW.md) — Sequence and flow diagrams for current health checks and planned product workflows.
+- [DATABASE.md](DATABASE.md) — Relational schema, 18 SQLAlchemy models, pgvector indexing, and tenancy integrity.
+- [DECISIONS.md](DECISIONS.md) — Architecture Decision Records (ADRs) explaining key technical choices and trade-offs.
+
+### Engineering Standards & Contracts
+- [API.md](API.md) — API conventions, active health endpoints (`GET /health`, `GET /api/v1/health`), and planned routes.
+- [CODE_RULES.md](CODE_RULES.md) — Coding conventions, layer boundaries, typing, and error-handling standards.
+- [SECURITY.md](SECURITY.md) — Threat model, tenant isolation, prompt injection defense, and credential security.
+- [CONFIGURATION.md](CONFIGURATION.md) — Environment variable specifications for backend, frontend, and Docker Compose.
+
+### Operations & Development
+- [development/setup.md](development/setup.md) — Step-by-step developer setup for Linux, macOS, and Windows.
+- [development/testing.md](development/testing.md) — Testing commands, CI workflows, and verification standards.

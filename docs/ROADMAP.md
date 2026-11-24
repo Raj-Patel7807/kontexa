@@ -1,54 +1,93 @@
-# Roadmap
+# Implementation Roadmap
 
-This roadmap sequences intended product work. It is not an implementation tutorial and does not
-change the source of truth for current behavior: the repository and its tests do that. See
-[PRD.md](PRD.md) for product scope and [ARCHITECTURE.md](ARCHITECTURE.md) for boundaries.
+This roadmap outlines the complete, sequenced 28-sprint plan to transition Kontexa from its initial architectural foundation into a fully operational AI Software Engineering Workspace.
 
-## Completed foundation
+---
 
-The repository currently includes:
+## Roadmap Phases
 
-- a Next.js status dashboard and a FastAPI readiness API;
-- PostgreSQL and Redis health checks;
-- async SQLAlchemy/Redis clients, an initial ORM model set, and Alembic migration;
-- PostgreSQL 16 with pgvector, Redis 7, backend, and frontend Docker Compose services;
-- backend pytest/Ruff and frontend ESLint/typecheck/build CI checks.
+```mermaid
+flowchart LR
+    P1["Phase 1: Foundation (Sprints 1-4)"] --> P2["Phase 2: Core Platform (Sprints 5-9)"]
+    P2 --> P3["Phase 3: AI & Knowledge (Sprints 10-14)"]
+    P3 --> P4["Phase 4: GitHub & Code Intelligence (Sprints 15-18)"]
+    P4 --> P5["Phase 5: Agent Execution (Sprints 19-21)"]
+    P5 --> P6["Phase 6: Cross-Context & Polish (Sprints 22-25)"]
+    P6 --> P7["Phase 7: Deployment & Release (Sprints 26-28)"]
+```
 
-The initial schema is present, but it does not make user-facing authentication, project management,
-chat, RAG, integrations, or tools available.
+---
 
-## Next: authentication and tenancy
+## Sprint Breakdown
 
-Implement identity, session handling, authorization, and the workspace membership checks required
-to protect tenant-scoped data. This should establish clear ownership and data-isolation behavior
-before product APIs expose workspace data.
+### Phase 1: Repository Foundation, Product & Architecture (Sprints 01–04)
+- **Sprint 01 — Repository audit and documentation reset** `[CURRENT SPRINT]`
+  - End-to-end audit of code, tests, migrations, Docker, CI, and docs.
+  - Comprehensive documentation reset: README, PRD, Roadmap, Feature Status, Architecture, Decisions, API, Security, Code Rules.
+  - Status classification: Implemented, Partial, Planned, Deprecated.
+- **Sprint 02 — Product scope, personas and release definition**
+  - Refine personas, user journeys, permissions model, and testable acceptance criteria for MVP.
+- **Sprint 03 — Architecture, ADRs and system contracts**
+  - Target modular-monolith design, streaming contracts (SSE), connector interfaces, retrieval pipelines, AI gateway boundaries.
+- **Sprint 04 — Final repository structure, local developer experience and CI**
+  - Hardening layout, task runners, pre-commit hooks, dependency caching, reproducible lockfiles.
 
-## Then: workspace and project workflows
+### Phase 2: Database, Tenancy & Application Shell (Sprints 05–09)
+- **Sprint 05 — Backend foundation and configuration**
+  - Pydantic Settings hardening, structured logging, request IDs, custom exception handlers.
+- **Sprint 06 — Database foundation and tenancy-ready schema**
+  - Finalize SQLAlchemy models and Alembic migrations; resolve composite foreign-key constraints; migration upgrade tests.
+- **Sprint 07 — Authentication, session management and identity**
+  - User registration, password hashing/OAuth, session management, auth middleware, and protected endpoints.
+- **Sprint 08 — Workspace tenancy, membership and access control**
+  - Workspace/project CRUD, member roles, tenant isolation verification, and cross-workspace access rejection tests.
+- **Sprint 09 — Frontend application shell and navigation**
+  - Responsive authenticated application shell, workspace switcher, project sidebar, loading and error states.
 
-Build the API and UI for creating, selecting, and managing workspaces and projects. Use the
-existing persistence model only after authorization rules and migration behavior are verified.
+### Phase 3: Conversational AI & Knowledge Retrieval (Sprints 10–14)
+- **Sprint 10 — Conversation and message persistence**
+  - Conversation CRUD, multipart message persistence, thread history APIs, and frontend conversation view.
+- **Sprint 11 — AI gateway, provider abstraction and model registry**
+  - Provider adapters (OpenAI, Anthropic, Gemini), mockable test provider, model configuration, and token accounting.
+- **Sprint 12 — Streamed chat experience**
+  - SSE streaming endpoint, frontend streaming client, cancellation handling, markdown rendering.
+- **Sprint 13 — Knowledge ingestion and document processing**
+  - Document upload, text extraction, content hashing, sliding-window chunking, and storage.
+- **Sprint 14 — Hybrid retrieval, embeddings and citations**
+  - Embedding generation, pgvector similarity search, reranking, source citation attribution in chat answers.
 
-## Then: conversations and AI responses
+### Phase 4: GitHub Connector & Code Intelligence (Sprints 15–18)
+- **Sprint 15 — GitHub connector foundation and repository synchronization**
+  - GitHub App integration, OAuth flow, repository selection, file tree synchronization, and background sync jobs.
+- **Sprint 16 — Codebase parsing, symbol extraction and dependency graph**
+  - Language-aware parsing, symbol table extraction, import analysis, AST indexing.
+- **Sprint 17 — Codebase semantic search and repository Q&A**
+  - Code chunking, embedding generation, code retrieval, repository Q&A with file and line range citations.
+- **Sprint 18 — Developer intelligence workflows**
+  - "Explain code", "Investigate bug", "Suggest tests", and "Review pull request" structured workflows.
 
-Add persistent conversation and message workflows, a provider-independent LLM boundary, and a
-chat interface. Decide and document the streaming contract before presenting streamed responses as
-an available capability.
+### Phase 5: Safe Agent Execution & Sandboxed Tasks (Sprints 19–21)
+- **Sprint 19 — Tool registry, execution policies and approval workflow**
+  - Tool definitions, parameter schemas, read-only vs write classification, approval token hashing.
+- **Sprint 20 — Sandboxed workspace and test execution engine**
+  - Isolated file editing workspace, path traversal guards, test execution in sandbox, timeout and resource limits.
+- **Sprint 21 — Draft pull request lifecycle and human verification**
+  - Diff generation, human review UI, draft PR creation via GitHub API upon explicit approval. No auto-merge.
 
-## Then: knowledge, memory, and retrieval
+### Phase 6: Cross-Source Context & Hardening (Sprints 22–25)
+- **Sprint 22 — Secondary engineering connector**
+  - Connect second engineering data source (e.g. Linear, Slack, or Jira); ingest metadata, sync jobs.
+- **Sprint 23 — Cross-source context graph and correlation**
+  - Correlate issues, PRs, commits, and discussions; demonstrate end-to-end multi-source investigation query.
+- **Sprint 24 — Security hardening, audit logging and secret protection**
+  - Audit event emitter, token encryption at rest, prompt injection defense hardening, rate limiting.
+- **Sprint 25 — Performance, caching and observability**
+  - Redis query caching, Prometheus metrics, OpenTelemetry tracing, structured error monitoring.
 
-Add document ingestion, versioning, chunking, embeddings, vector retrieval, and bounded memory
-workflows. pgvector is available in the schema and local image, but no embedding, ingestion, or
-retrieval code currently exists.
-
-## Later: integrations, tools, and governance
-
-Evaluate GitHub and other integrations, controlled tool execution, citations, usage tracking, and
-audit logging as product capabilities. The schema reserves relevant entities; their security model,
-API contracts, and operational limits remain to be designed.
-
-## Planning principles
-
-- Keep planned capabilities explicitly distinct from implemented behavior.
-- Prefer a modular monolith and explicit internal boundaries.
-- Add dependencies, infrastructure, and abstraction only when a concrete feature needs them.
-- Record material architecture choices in [DECISIONS.md](DECISIONS.md).
+### Phase 7: Deployment & Release Verification (Sprints 26–28)
+- **Sprint 26 — Production deployment and infrastructure runbooks**
+  - Staging deployment (Render / Vercel / Aiven), automated migrations, deployment runbooks.
+- **Sprint 27 — End-to-end verification, smoke tests and penetration testing**
+  - Full E2E test suite, cross-tenant penetration tests, security audit, performance load tests.
+- **Sprint 28 — Release documentation, demo environment and launch readiness**
+  - User documentation, interactive demo datasets, release notes, and final launch checklist.

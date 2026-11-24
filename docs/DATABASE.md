@@ -1,101 +1,88 @@
-# Database Architecture and Schema
+# Database Architecture & Schema
 
-PostgreSQL with pgvector is Kontexa's selected persistent relational and vector store. This
-document describes schema artifacts in the repository, not proof that a particular database has
-been provisioned or that every modeled capability has a product workflow.
+PostgreSQL 16 with the **pgvector** extension serves as Kontexa's persistent relational and vector database.
 
-## Sources of truth
+---
 
-- Alembic migrations under [`backend/migrations/versions/`](../backend/migrations/versions/) are
-  the application schema source of truth.
-- SQLAlchemy models under [`backend/src/kontexa/database/models/`](../backend/src/kontexa/database/models/)
-  mirror the application mapping.
-- [`infrastructure/database/schema.sql`](../infrastructure/database/schema.sql) is a standalone,
-  equivalent bootstrap script for a new empty Aiven service. It is not a migration mechanism.
+## 1. Schema Sources of Truth
 
-The Docker Compose database image is `pgvector/pgvector:pg16`. The initial migration enables the
-`pgcrypto`, `uuid-ossp`, and `vector` PostgreSQL extensions.
+1. **Alembic Migrations** (`backend/migrations/versions/`): The authoritative application schema source of truth.
+   - `20260811_0001_initial_schema.py`: Initial schema defining extensions (`pgcrypto`, `uuid-ossp`, `vector`), tables, foreign keys, and indexes.
+   - `20260904_0002_schema_hardening.py`: Hardening revision adding composite uniqueness constraints (`message_parts`, `document_chunks`, `ai_models`), foreign key on `memory_entries`, and targeted query indexes.
+2. **SQLAlchemy 2.0 ORM Registry** (`backend/src/kontexa/database/models/`): Python object-relational mapping mirroring the database tables.
+3. **Bootstrap Script** (`infrastructure/database/schema.sql`): Standalone DDL script intended exclusively for bootstrapping an empty Aiven PostgreSQL database instance. It is not an ongoing migration tool.
 
-## Current schema artifact
+---
 
-The repository contains the initial migration (`20260811_0001`) followed by schema-hardening
-revision `20260904_0002`, and models for the following tables:
+## 2. Table Catalog (18 Tables)
 
-| Area | Tables | Current meaning |
-| --- | --- | --- |
-| Identity and tenancy | `users`, `workspaces`, `workspace_members` | Persistence structure only; no authentication or authorization API exists. |
-| Projects and chat | `projects`, `conversations`, `messages`, `message_parts` | Persistence structure only; no project or chat API exists. |
-| Knowledge | `documents`, `document_versions`, `document_chunks`, `memory_entries` | Vector-ready schema only; no ingestion, embeddings, search, or memory flow exists. |
-| Integrations and tools | `integrations`, `tools`, `agent_runs` | Reserved persistence structure; no integration or tool execution exists. |
-| AI metadata | `ai_providers`, `ai_models`, `ai_usage` | Reserved persistence structure; no provider client or usage pipeline exists. |
-| Auditing | `audit_logs` | Table exists in the schema; no audit-event producer exists. |
+| Table | Domain | Primary Key | Scoping / Foreign Keys | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **`users`** | Identity | UUID | None | User accounts (email, name, is_active, timestamps, deleted_at). |
+| **`workspaces`** | Tenancy | UUID | None | Organizational tenant container (name, unique slug, timestamps, deleted_at). |
+| **`workspace_members`** | Tenancy | (workspace_id, user_id) | `workspace_id -> workspaces.id`<br/>`user_id -> users.id` | Membership roles (`owner`, `admin`, `member`, `viewer`). |
+| **`projects`** | Workspace | UUID | `workspace_id -> workspaces.id` | Project container within a workspace (name, slug unique per workspace). |
+| **`conversations`** | Chat | UUID | `workspace_id -> workspaces.id`<br/>`project_id -> projects.id` (nullable) | Chat thread metadata, timestamps, deleted_at. |
+| **`messages`** | Chat | UUID | `conversation_id -> conversations.id`<br/>`user_id -> users.id` (nullable) | Chat messages (`user`, `assistant`, `system`). |
+| **`message_parts`** | Chat | UUID | `message_id -> messages.id` | Multipart message content (text, code blocks, citations, tool calls). Unique on `(message_id, part_index)`. |
+| **`documents`** | Knowledge | UUID | `project_id -> projects.id` | Ingested files/documents (name, path, mime_type, timestamps). |
+| **`document_versions`** | Knowledge | UUID | `document_id -> documents.id` | Document version tracking with `content_hash`. |
+| **`document_chunks`** | Knowledge | UUID | `document_version_id -> document_versions.id` | Chunked text and vector embeddings (`VECTOR(1536)`). Unique on `(document_version_id, chunk_index)`. |
+| **`integrations`** | Connectors | UUID | `workspace_id -> workspaces.id` | External provider configurations and auth tokens (JSON). |
+| **`memory_entries`** | Context | UUID | `workspace_id -> workspaces.id`<br/>`user_id -> users.id` (nullable) | Scoped key-value persistent memory. |
+| **`tools`** | Agent | UUID | `project_id -> projects.id` | Registered tool definitions (parameters JSON, enabled flag). |
+| **`agent_runs`** | Agent | UUID | `project_id -> projects.id`<br/>`tool_id -> tools.id` (nullable) | Execution records of agent actions (status, input, output, error). |
+| **`ai_providers`** | AI Gateway | UUID | None | AI providers (`openai`, `anthropic`, `gemini`, `mock`). |
+| **`ai_models`** | AI Gateway | UUID | `provider_id -> ai_providers.id` | Model metadata, context window size, pricing. Unique on `(provider_id, model_name)`. |
+| **`ai_usage`** | AI Gateway | UUID | `model_id -> ai_models.id` | Token consumption records (input, output, estimated cost). |
+| **`audit_logs`** | Security | UUID | `workspace_id -> workspaces.id`<br/>`user_id -> users.id` (nullable) | Tamper-evident audit trail of mutations and access events. |
 
-## Relationships and constraints
+---
+
+## 3. Entity Relationship Diagram
 
 ```mermaid
 erDiagram
     USERS ||--o{ WORKSPACE_MEMBERS : joins
     WORKSPACES ||--o{ WORKSPACE_MEMBERS : has
     WORKSPACES ||--o{ PROJECTS : owns
-    WORKSPACES ||--o{ CONVERSATIONS : contains
-    PROJECTS ||--o{ CONVERSATIONS : optionally_groups
+    WORKSPACES ||--o{ CONVERSATIONS : scopes
+    PROJECTS ||--o{ CONVERSATIONS : groups
     CONVERSATIONS ||--o{ MESSAGES : contains
     MESSAGES ||--o{ MESSAGE_PARTS : splits
     PROJECTS ||--o{ DOCUMENTS : contains
-    DOCUMENTS ||--o{ DOCUMENT_VERSIONS : versions
-    DOCUMENT_VERSIONS ||--o{ DOCUMENT_CHUNKS : chunks
+    DOCUMENTS ||--o{ DOCUMENT_VERSIONS : tracks
+    DOCUMENT_VERSIONS ||--o{ DOCUMENT_CHUNKS : contains
     WORKSPACES ||--o{ INTEGRATIONS : configures
     WORKSPACES ||--o{ MEMORY_ENTRIES : scopes
-    PROJECTS ||--o{ TOOLS : defines
-    TOOLS ||--o{ AGENT_RUNS : invokes
-    AI_PROVIDERS ||--o{ AI_MODELS : offers
+    PROJECTS ||--o{ TOOLS : registers
+    TOOLS ||--o{ AGENT_RUNS : executes
+    AI_PROVIDERS ||--o{ AI_MODELS : provides
     AI_MODELS ||--o{ AI_USAGE : records
+    WORKSPACES ||--o{ AUDIT_LOGS : records
 ```
 
-Most application entities use UUID primary keys generated by `gen_random_uuid()`. The mutable user,
-workspace, project, conversation, and integration records carry `created_at`, `updated_at`, and
-`deleted_at`; partial indexes support querying non-deleted users, workspaces, projects, and
-conversations. Workspace slugs are globally unique, while display names are not. `workspace_members`
-has a composite primary key of `(workspace_id, user_id)`, project slugs are unique per workspace,
-and message-part, document-chunk, and provider-model positions or identities are unique within their
-respective parent scopes. Memory entries may retain a nullable user reference; deleting a user sets
-that reference to null.
+---
 
-Foreign-key behavior is defined in the migration: dependent entities generally cascade when their
-owner is deleted, while message users, conversation projects, and agent-run tools use `SET NULL`
-where preserving the dependent record is intended.
+## 4. Vector Storage Specification
 
-## Vector storage
+- **Column**: `document_chunks.embedding` is defined as `VECTOR(1536)` (nullable).
+- **Index**: `idx_chunks_embedding` is an **IVFFlat** index configured with cosine distance (`vector_cosine_ops`) or L2 distance and `lists = 100`.
+- **Note on Dimensions**: The 1536-dimensional setting matches standard OpenAI embeddings (`text-embedding-3-small`, `text-embedding-ada-002`). If an alternative embedding model (such as Voyage AI 1024 or Gemini 768) is selected during Sprint 13, a migration will update the column definition and index parameters.
 
-`document_chunks.embedding` is nullable `VECTOR(1536)` and has the `idx_chunks_embedding` IVFFlat
-index using L2 distance with `lists = 100`. This is schema support only: no current application code
-creates embeddings or executes vector queries. The dimension is tied to the current model constant;
-changing embedding models may require a migration and an explicit decision.
+---
 
-## Current limits and planned controls
+## 5. Architectural Risks & Required Hardening (Recorded for Sprint 06)
 
-The schema includes workspace references on relevant records, but the repository does **not** enable
-Row-Level Security, define RLS policies, partition tables, configure backup/PITR, provision a hosted
-database, or implement retention jobs. Those are future operational and security decisions, not
-active guarantees. Authorization and workspace filtering must be implemented before application
-data is exposed.
-
-`conversations.workspace_id` and `conversations.project_id` can currently reference different
-workspaces because the project foreign key does not encode the project's workspace. Enforcing that
-relationship in the database would require either a composite project key/foreign key or a trigger;
-the associated deletion and tenancy semantics remain an authentication-and-tenancy design decision.
-Likewise, the global uniqueness of user emails, workspace slugs, and project workspace-slug pairs
-reserves those identities after soft deletion. Whether to reuse them for active records only is
-deferred until the product's retention and identity policy is defined.
-
-## Working with the schema
-
-From `backend/`, configure `DATABASE_URL` and apply migrations with:
-
-```bash
-uv run alembic upgrade head
-```
-
-Do not run the Aiven bootstrap SQL against an existing database. See
-[CONFIGURATION.md](CONFIGURATION.md) for connection and TLS settings, and
-[DECISIONS.md](DECISIONS.md) for the store decision.
+1. **Cross-Tenant Constraint Gap in Conversations**:
+   - `conversations.workspace_id` and `conversations.project_id` have separate foreign keys.
+   - *Risk*: A conversation could theoretically be inserted with `workspace_id = A` and `project_id = B` where Project B belongs to Workspace C.
+   - *Planned Resolution*: In Sprint 06, add a composite foreign key on `projects(id, workspace_id)` and enforce `conversations(project_id, workspace_id) -> projects(id, workspace_id)`.
+2. **Unencrypted Credentials in Integrations**:
+   - `integrations.auth_data` stores OAuth tokens and keys as plain JSON.
+   - *Risk*: Database dumps or unauthorized DB access exposes external tokens.
+   - *Planned Resolution*: In Sprint 06/24, implement application-level AES-256-GCM envelope encryption before storing tokens in `auth_data`.
+3. **Soft-Delete Unique Indexing**:
+   - `users.email` and `workspaces.slug` have unique constraints on the whole table.
+   - *Risk*: Soft-deleting a user (`deleted_at IS NOT NULL`) prevents the same email from ever registering again.
+   - *Planned Resolution*: Evaluate moving unique constraints to partial indexes (`WHERE deleted_at IS NULL`) when identity lifecycle is formalized in Sprint 07.

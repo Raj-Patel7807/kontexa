@@ -1,100 +1,73 @@
-# Code Rules & Development Standards — Kontexa
+# Code Rules & Engineering Standards
 
-This document defines opinionated coding standards and practices for Kontexa. All engineers and AI coding agents must adhere to these rules.
+This document defines mandatory coding standards and practices for Kontexa. All engineers and AI coding agents must adhere to these rules.
 
 ---
 
 ## 1. Simplify First
 
-Before writing code, evaluate:
+Before writing code, ask:
 - Does this need to exist?
 - Is there already a standard-library or project solution?
-- Can the design be simpler?
-- Am I solving a real requirement?
-- Am I introducing abstraction before it is needed?
+- Can the design be simpler with fewer moving parts?
+- Am I solving a real requirement or adding speculative abstraction?
 
-Prefer simple, readable solutions over clever code. Simple means fewer moving parts, not fewer characters. Do not sacrifice readability for brevity.
-
-Duplication is not automatically a problem. Code that changes for different reasons should not be artificially merged into fragile abstractions.
+Prefer simple, readable solutions over clever code. Duplication is preferable to premature or wrong abstraction.
 
 ---
 
-## 2. Language & Tooling
+## 2. Python Standards & Tooling
 
-### Python
-
-- **Target Version**: Python 3.12+
-- **Line Length**: 100 characters maximum
-- **Linting & Formatting**: Enforced via Ruff (`uv run ruff check .` and `uv run ruff format .`)
-- **Dependency Management**: Managed exclusively through `uv`. Run `uv add <package>`. Never use `pip install` directly to modify project dependencies.
-- **Type Annotations**: Mandatory type hints on public functions using modern Python syntax (`list[str]`, `str | None`).
-
----
-
-## 3. Module Responsibility & Architecture Boundaries
-
-Each module must have a single, clearly defined responsibility. Avoid generic dumping-ground files such as:
-- `utils.py`
-- `helpers.py`
-- `common.py`
-- `misc.py`
-
-Do not create abstractions merely to make code look architectural.
-
-### Layer Boundaries
-
-- **Configuration Layer**: Environment and application configuration belong strictly in `kontexa.core.config`.
-- **Database Layer**: Data access logic belongs strictly in `kontexa.database`.
-- **API Handlers**: HTTP endpoints must parse requests, delegate work, and return responses without containing complex business logic.
-- **Retrieval Logic**: Context and knowledge retrieval operations must remain read-only.
-- **LLM/Vendor Isolation**: Third-party provider SDKs (OpenAI, Anthropic, etc.) must be isolated behind domain interfaces. Vendor-specific details must not leak into business logic.
-- **Frontend & Backend**: Frontend communicates with backend through explicitly defined RESTful API schemas.
+- **Target Runtime**: Python 3.12+
+- **Line Length**: 100 characters maximum.
+- **Linting & Formatting**: Enforced via Ruff (`uv run ruff check .` and `uv run ruff format .`).
+- **Dependency Management**: Managed exclusively through `uv`. Never use raw `pip install` to modify project dependencies.
+- **Type Annotations**: Mandatory type hints on all public functions, arguments, and return types using modern syntax (`list[str]`, `str | None`).
+- **Pydantic**: Use Pydantic v2 schemas for all external inputs and API responses.
 
 ---
 
-## 4. Error Handling & Logging
+## 3. TypeScript & Next.js Standards
 
-- **Policy**: Tolerant at clearly defined external-input boundaries, strict internally.
-- **Validation**: Validate all incoming payload parameters at the API edge using Pydantic models.
-- **No Swallowed Exceptions**: Never silently catch exceptions. Never use:
-  ```python
-  except Exception:
-      pass
-  ```
-- **Logging**: Use standard Python `logging` module. Never use `print()` for runtime diagnostics.
+- **Target Runtime**: Node.js 20+, Next.js 16 App Router, React 19, TypeScript 5.
+- **Linting & Type Checking**: Enforced via ESLint (`npm run lint`) and TypeScript (`npm run typecheck`).
+- **Formatting**: 2-space indentation.
+- **Components**: Functional components with explicit TypeScript interfaces for props. Keep components focused; separate data fetching from presentation.
+- **Secrets**: Never prefix internal secrets or API tokens with `NEXT_PUBLIC_`.
 
 ---
 
-## 5. Comments & Docstrings
+## 4. Module Boundaries & Layer Responsibilities
 
-- Comments must explain **why** something was done, not **what** the code does.
-- Bad:
-  ```python
-  # Increment counter
-  counter += 1
-  ```
-- Good:
-  ```python
-  # Count rejected records so ingestion reports data loss explicitly.
-  rejected += 1
-  ```
-- **No Planning References**: Never reference temporary planning identifiers in source code (e.g., `Phase 3`, `Task 7`, `Sprint 2`, `D12`). Code must remain self-explanatory regardless of project management history.
-- **Docstrings**: Public functions and classes must have concise docstrings detailing purpose, key parameters, return values, side effects, and constraints. Avoid repeating function names verbatim.
+Each module must have a single, clearly defined responsibility. Avoid generic dumping-ground files (`utils.py`, `helpers.py`, `common.py`).
+
+- **Configuration Layer**: Environment and settings belong strictly in `kontexa.core.config`.
+- **Database Layer**: SQLAlchemy models, sessions, and data access belong in `kontexa.database`.
+- **API Handlers**: Route handlers parse requests, enforce auth dependencies, delegate to services, and return schemas. Handlers must not contain complex business logic.
+- **AI/LLM Boundary**: Third-party provider SDKs (OpenAI, Anthropic, Gemini) must remain behind the internal `AIGateway` interface. Vendor-specific types must not leak into domain logic.
+- **Retrieval Logic**: Knowledge and code retrieval operations must remain strictly read-only.
 
 ---
 
-## 6. Security
+## 5. Error Handling & Logging
 
-- **Secrets**: Never hardcode API keys, database credentials, or tokens in source code. Use environment variables.
-- **SQL Queries**: Always use parameterized queries or SQLAlchemy ORM abstractions. Never construct SQL queries via string formatting or concatenation.
-- **Logging Safety**: Never log sensitive data, auth tokens, passwords, or personal credentials.
+- **Validation at the Edge**: Validate all incoming parameters with Pydantic schemas.
+- **No Swallowed Exceptions**: Never use bare `except:` or `except Exception: pass`. Catch specific exceptions and log or raise.
+- **Structured Logging**: Use Python's standard `logging` module. Never use `print()` for runtime diagnostics.
+- **Information Hiding**: Do not leak raw database exception details, credentials, or internal IPs to API clients.
 
 ---
 
-## 7. Naming Conventions
+## 6. Comments, Docstrings & Planning References
 
-- **Python**: `snake_case` for variables, functions, and modules.
-- **Classes**: `PascalCase` for Python classes and TypeScript interfaces/components.
-- **Constants**: `SCREAMING_SNAKE_CASE` for global constants.
-- **TypeScript**: `camelCase` for variables, functions, and properties.
-- **Tests**: Descriptive test names that explain expected behavior (e.g., `test_invalid_project_id_is_rejected`).
+- **Explain Why, Not What**: Comments must explain the reasoning or constraint, not recite what the code does.
+- **Docstrings**: Public functions and classes must have concise docstrings detailing purpose, parameters, return values, and side effects.
+- **No Planning References in Code**: Never reference temporary sprint or phase identifiers in source code (e.g., `Sprint 1`, `Phase 3`, `Task 4`). Code must remain evergreen and self-explanatory regardless of sprint history.
+
+---
+
+## 7. Security Rules
+
+- **Secrets**: Never commit `.env` files, API keys, database credentials, or tokens.
+- **SQL Queries**: Always use parameterized queries or SQLAlchemy ORM abstractions. Never construct SQL via string concatenation or formatting.
+- **External Data**: Always treat retrieved code or document content as untrusted input.

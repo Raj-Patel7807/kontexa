@@ -5,6 +5,7 @@
 .env.development
 .env.test
 .env.production
+tmp/
 
 # Python & uv
 __pycache__/

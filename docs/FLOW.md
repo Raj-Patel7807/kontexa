@@ -1,84 +1,130 @@
-# System and Product Flows
+# System & Product Flows
 
-This document separates the flows implemented in the repository from planned product flows. It does
-not define future API paths or classes.
+This document details both the currently implemented system flows and the planned product workflows.
 
-## Current readiness flow
+---
+
+## 1. Implemented System Flows (Sprint 01)
+
+### A. Dependency Health & Readiness Check Flow
+
+The backend exposes two active endpoints: `GET /health` and `GET /api/v1/health`. Both probe PostgreSQL and Redis concurrently with a configurable timeout guard (`HEALTH_CHECK_TIMEOUT_SECONDS`, default 2.0s).
 
 ```mermaid
 sequenceDiagram
-    participant U as Browser
-    participant F as Next.js frontend
-    participant B as FastAPI backend
-    participant P as PostgreSQL
-    participant R as Redis
+    autonumber
+    participant Client as Client (Browser / Monitoring)
+    participant Router as FastAPI Health Router
+    participant Checker as Component Health Checker
+    participant DB as PostgreSQL (asyncpg)
+    participant Redis as Redis Client
 
-    U->>F: Load status dashboard
-    F->>B: GET /api/health (Next.js rewrite)
-    B->>P: SELECT 1
-    B->>R: PING
-    alt both dependencies respond
-        B-->>F: 200 {status: ok, dependencies}
-    else either dependency fails or times out
-        B-->>F: 503 {status: degraded, dependencies}
+    Client->>Router: GET /health (or /api/v1/health)
+    Router->>Checker: check_component("database") & check_component("redis")
+    par Database Probe
+        Checker->>DB: SELECT 1
+        DB-->>Checker: Success (latency recorded)
+    and Redis Probe
+        Checker->>Redis: PING
+        Redis-->>Checker: PONG (latency recorded)
     end
-    F-->>U: Show service status
+
+    alt Both dependencies healthy
+        Checker-->>Router: database: ok, redis: ok
+        Router-->>Client: 200 OK { status: "ok", service: "kontexa", dependencies: { ... } }
+    else Any dependency unavailable or timed out
+        Checker-->>Router: e.g. redis: unavailable (error logged internally)
+        Router-->>Client: 503 SERVICE UNAVAILABLE { status: "degraded", dependencies: { ... } }
+    end
 ```
 
-The frontend polls every 15 seconds. The rewrite in `frontend/next.config.ts` turns
-`/api/health` into `${BACKEND_URL}/health`; it is not a separate Next.js API route. The backend also
-exposes the same response at `/api/v1/health`.
+### B. Health Degradation & Information Hiding Flow
 
-## Current error flow
+When a dependency probe encounters a connection failure, network timeout, or authorization error:
+1. The error details, stack trace, and connection targets are logged strictly on the server at `ERROR` level.
+2. The public API response masks all internal credentials, hosts, and raw exception messages.
+3. The response payload returns `status: "unavailable"` with `latency_ms: 0.0` and HTTP status `503 Service Unavailable`.
 
-Each dependency probe has the configured timeout. Timeout, network, Redis, and SQLAlchemy errors
-produce an `unavailable` dependency result. If any required dependency is unavailable, the health
-route returns HTTP 503 with `degraded` status and latency measurements; connection-error details are
-logged server-side rather than returned to the client. If the frontend cannot reach or validate the
-response, it displays the backend as unreachable.
+---
 
-## Planned product flow
+## 2. Planned Product Flows
+
+### A. Authentication & Session Verification Flow (Sprint 07)
 
 ```mermaid
-flowchart LR
-    User --> Auth[Authentication]
-    Auth --> Workspace[Workspace and project selection]
-    Workspace --> Conversation[Conversation request]
-    Conversation --> Context[History and memory retrieval]
-    Conversation --> Knowledge[Knowledge retrieval]
-    Context --> Orchestrator[Backend application]
-    Knowledge --> Orchestrator
-    Orchestrator --> Tools[Controlled tools when authorized]
-    Orchestrator --> Provider[LLM provider boundary]
-    Provider --> Response[Response, streaming, citations]
-    Response --> Persist[Persistence, usage, and auditing]
+sequenceDiagram
+    autonumber
+    participant User as Developer
+    participant UI as Next.js Web App
+    participant AuthAPI as Auth Domain
+    participant DB as PostgreSQL (users, sessions)
+
+    User->>UI: Enter Credentials (or OAuth)
+    UI->>AuthAPI: POST /api/v1/auth/login
+    AuthAPI->>DB: Lookup user & verify password hash
+    DB-->>AuthAPI: User record (active, not deleted)
+    AuthAPI->>DB: Create session record
+    AuthAPI-->>UI: Set Secure HttpOnly Session Cookie
+    UI-->>User: Redirect to Workspace Dashboard
 ```
 
-This is planned direction only. The repository has not implemented authentication, conversation
-routes, retrieval, providers, streaming, citations, tools, or related persistence behavior.
+---
 
-## Planned feature flows
+### B. Grounded Chat & SSE Streaming Flow (Sprints 10–12)
 
-- **Authentication:** a user proves identity; the backend establishes an authorized session or
-  token; requests are checked before workspace data is returned.
-- **Workspace/project:** an authorized member selects a workspace and project; the backend verifies
-  membership before performing scoped reads or writes.
-- **Conversation persistence:** a user message, conversation metadata, and assistant result are
-  stored in the modeled conversation/message records after contracts are implemented.
-- **Document ingestion and indexing:** selected source material is accepted, versioned, chunked,
-  embedded, and written to document tables. Embedding generation and ingestion logic are planned.
-- **RAG and memory:** a request is scoped to authorized context, relevant chunks or memory are
-  retrieved, and selected context informs a provider request. Citation behavior remains planned.
-- **GitHub integration and tools:** a user authorizes a selected integration or tool; the backend
-  validates the request, executes within defined controls, and records the result as designed.
+```mermaid
+sequenceDiagram
+    autonumber
+    participant User as Developer
+    participant UI as Chat Interface
+    participant ChatAPI as Chat Router
+    participant Retrieval as RAG Engine
+    participant Gateway as AI Gateway
+    participant Provider as External LLM (e.g. Claude / GPT-4)
+    participant DB as PostgreSQL
 
-## Data ownership and movement
+    User->>UI: Submit Message ("How does auth work?")
+    UI->>ChatAPI: POST /api/v1/conversations/{id}/messages (Stream: true)
+    ChatAPI->>DB: Persist user message
+    ChatAPI->>Retrieval: Retrieve relevant chunks & symbols
+    Retrieval->>DB: pgvector cosine similarity search
+    DB-->>Retrieval: Relevant document chunks with citations
+    Retrieval-->>ChatAPI: Context chunks & file references
+    ChatAPI->>Gateway: Format prompt + untrusted context
+    Gateway->>Provider: Request streaming completion
+    Provider-->>Gateway: Token stream
+    Gateway-->>ChatAPI: Token stream + citation events
+    ChatAPI-->>UI: Server-Sent Events (SSE chunks)
+    UI-->>User: Progressive render with line citations
+    ChatAPI->>DB: Persist assistant message & token usage
+```
 
-PostgreSQL is the planned persistent system of record for application entities and pgvector
-embeddings. The initial schema includes workspace-scoped records and a `VECTOR(1536)` document-chunk
-embedding column with an IVFFlat L2 index. Redis is currently only pinged by readiness checks;
-caching, sessions, rate limiting, and queues are future uses rather than current data flows.
+---
 
-Future external data (AI providers, GitHub, or other integrations) must cross backend-owned
-boundaries. Browser code should not receive provider credentials. See [ARCHITECTURE.md](ARCHITECTURE.md)
-and [DATABASE.md](DATABASE.md) for the corresponding boundaries and schema facts.
+### C. Human-Approved Agent Task Execution Flow (Sprints 19–21)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Dev as Developer
+    participant UI as Task View
+    participant Agent as Agent Orchestrator
+    participant Sandbox as Execution Sandbox
+    participant GitHub as GitHub API
+
+    Dev->>UI: Request task ("Add test for health check")
+    UI->>Agent: Plan generation request
+    Agent->>Agent: Generate structured diff plan & compute SHA256 Plan Hash
+    Agent-->>UI: Display plan, diff, and confirmation prompt
+    Dev->>UI: Click "Approve Plan" (signing Plan Hash)
+    UI->>Agent: POST /tasks/{id}/execute { approved_hash }
+    Agent->>Agent: Verify approved_hash == planned_hash
+    Agent->>Sandbox: Apply file edits & execute `uv run pytest`
+    Sandbox-->>Agent: Test results: 90 passed, 0 failed
+    Agent-->>UI: Display test output & prompt for PR creation
+    Dev->>UI: Click "Create Draft Pull Request"
+    UI->>Agent: POST /tasks/{id}/push
+    Agent->>GitHub: Create branch, commit, and open Draft PR
+    GitHub-->>Agent: Draft PR #42 Created
+    Agent-->>UI: Display clickable Draft PR link
+```

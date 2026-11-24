@@ -1,81 +1,99 @@
 # Local Development Setup
 
-## Prerequisites
+This guide details how to set up, build, and run Kontexa on your local development machine.
 
-- Python 3.12 or newer and `uv`
-- Node.js 20 or newer and npm
-- Docker with Docker Compose
-- GNU Make or a compatible `make` implementation
+---
 
-## Configure local environment files
+## 1. Prerequisites
 
-Copy the example files if you want local overrides:
+- **Python 3.12+** and [`uv`](https://docs.astral.sh/uv/) (v0.13+)
+- **Node.js 20+** and **npm**
+- **Docker** with **Docker Compose**
+- *(Optional)* GNU Make (available by default on Linux/macOS)
 
+---
+
+## 2. Environment Configuration
+
+Copy the example configuration files:
+
+### Linux / macOS
 ```bash
 cp .env.example .env
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
 ```
 
-Before running the backend locally, add or uncomment `DATABASE_URL` in `backend/.env`. The backend
-loads `.env` from the `backend/` working directory, so the root `.env` alone is insufficient for
-`make dev`. The default local URL is documented in the commented example line. `REDIS_URL` defaults
-to `redis://localhost:6379/0` if not supplied.
+### Windows (PowerShell)
+```powershell
+Copy-Item .env.example .env
+Copy-Item backend/.env.example backend/.env
+Copy-Item frontend/.env.example frontend/.env
+```
 
-For every supported variable and its runtime behavior, see [../CONFIGURATION.md](../CONFIGURATION.md).
+In `backend/.env`, ensure `DATABASE_URL` is configured:
+```env
+DATABASE_URL=postgresql+asyncpg://kontexa:kontexa_pass@localhost:5432/kontexa_db
+```
 
-## Install dependencies
+---
 
+## 3. Installing Dependencies
+
+### Using Make
 ```bash
 make setup
 ```
 
-This runs `uv sync` in `backend/` and `npm install` in `frontend/`. The individual equivalents are:
-
+### Directly via CLI
 ```bash
-cd backend && uv sync
-cd frontend && npm install
+# Backend
+cd backend
+uv sync
+
+# Frontend
+cd ../frontend
+npm install
 ```
 
-## Run the full containerized stack
+---
+
+## 4. Running the Local Stack
+
+### Option A: Complete Containerized Stack (Recommended)
+Starts PostgreSQL 16 (with pgvector), Redis 7, Backend, and Frontend in Docker:
 
 ```bash
+# Start services in background
 make up
-```
+# (Or: docker compose -f infrastructure/docker/docker-compose.yml up -d)
 
-This runs `docker compose -f infrastructure/docker/docker-compose.yml up -d` and starts
-PostgreSQL, Redis, backend, and frontend. The services are available at ports 5432, 6379, 8000, and
-3000 respectively. Check them with:
-
-```bash
+# View running container status
 docker compose -f infrastructure/docker/docker-compose.yml ps
+
+# Stop services
+make down
 ```
 
-Stop the stack with `make down`.
-
-## Run frontend and backend locally
-
-Start the services in separate terminals after PostgreSQL and Redis are available:
+### Option B: Running Services Locally Outside Docker
+Start PostgreSQL and Redis in Docker, then run Backend and Frontend locally with live code reload:
 
 ```bash
-cd backend && uv run uvicorn kontexa.main:app --reload --port 8000
-```
+# 1. Start only database and cache
+docker compose -f infrastructure/docker/docker-compose.yml up -d postgres redis
 
-```bash
-cd frontend && npm run dev
-```
-
-`make dev` starts those same commands together. The local frontend defaults to a rewrite target of
-`http://localhost:8000`. Visit `http://localhost:3000` to see the status dashboard; it polls
-`/api/health` and shows the readiness result.
-
-## Apply the schema
-
-The Docker Compose database does not run Alembic migrations automatically. To create the application
-schema in a configured database, run from `backend/`:
-
-```bash
+# 2. Apply database migrations
+cd backend
 uv run alembic upgrade head
+
+# 3. Start Backend server
+uv run uvicorn kontexa.main:app --reload --port 8000
+
+# 4. In a separate terminal, start Frontend server
+cd frontend
+npm run dev
 ```
 
-See [../DATABASE.md](../DATABASE.md) before using the Aiven-only bootstrap SQL file.
+- Backend API: `http://localhost:8000` (Health: `http://localhost:8000/health`)
+- Swagger Docs: `http://localhost:8000/docs`
+- Frontend UI: `http://localhost:3000`
