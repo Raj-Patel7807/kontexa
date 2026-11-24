@@ -73,6 +73,28 @@ class Settings(BaseSettings):
         description="Allowed CORS origin domains",
     )
 
+    # Session & Authentication security settings
+    session_cookie_name: str = Field(
+        default="kontexa_session",
+        description="Name of the HTTP-only session cookie",
+    )
+    session_max_age_seconds: int = Field(
+        default=30 * 24 * 60 * 60,  # 30 days
+        description="Session validity lifetime in seconds",
+    )
+    session_cookie_secure: bool = Field(
+        default=False,
+        description="Enforce Secure flag on cookies (defaults to True in production)",
+    )
+    session_cookie_samesite: Literal["lax", "strict", "none"] = Field(
+        default="lax",
+        description="SameSite cookie policy",
+    )
+    csrf_secret: str = Field(
+        default="dev-csrf-secret-change-in-production-kontexa-secure",
+        description="Secret key used for signing/verifying double-submit CSRF tokens",
+    )
+
     @model_validator(mode="after")
     def validate_production_invariants(self) -> "Settings":
         """Fail fast if insecure settings are configured in production environment."""
@@ -97,6 +119,9 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "DATABASE_URL must point to a remote managed database in production."
                 )
+
+            if not self.session_cookie_secure:
+                self.session_cookie_secure = True
 
         return self
 

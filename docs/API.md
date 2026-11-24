@@ -109,12 +109,11 @@ Reports application readiness by concurrently probing PostgreSQL and Redis depen
 
 ---
 
-## 3. Planned Target Contracts (Sprint 05–28)
-
-### 3.1 Authentication & Session Contracts (`/api/v1/auth`)
-
-#### `POST /api/v1/auth/register`
+### `POST /api/v1/auth/register`
 Creates a new user account.
+- **URL**: `/api/v1/auth/register` or `/auth/register`
+- **Method**: `POST`
+- **Authentication**: None
 - **Request Body**:
   ```json
   {
@@ -134,8 +133,13 @@ Creates a new user account.
   }
   ```
 
-#### `POST /api/v1/auth/login`
-Authenticates user and sets HttpOnly session cookie.
+---
+
+### `POST /api/v1/auth/login`
+Authenticates a user and sets an HttpOnly session cookie.
+- **URL**: `/api/v1/auth/login` or `/auth/login`
+- **Method**: `POST`
+- **Authentication**: None
 - **Request Body**:
   ```json
   {
@@ -145,7 +149,7 @@ Authenticates user and sets HttpOnly session cookie.
   ```
 - **Response Headers**:
   ```text
-  Set-Cookie: kontexa_session=sess_9f8e7d...; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000
+  Set-Cookie: kontexa_session=sess_9f8e7d...; Path=/; HttpOnly; SameSite=lax; Max-Age=2592000
   ```
 - **Response (`200 OK`)**:
   ```json
@@ -153,20 +157,48 @@ Authenticates user and sets HttpOnly session cookie.
     "user": {
       "id": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
       "email": "developer@example.com",
-      "name": "Jane Developer"
+      "name": "Jane Developer",
+      "is_active": true,
+      "created_at": "2026-11-25T01:00:00Z"
     },
-    "active_workspace_id": "w1x2y3z4-a5b6-7c8d-9e0f-1a2b3c4d5e6f"
+    "csrf_token": "csrf_payload.signature"
   }
   ```
 
-#### `GET /api/v1/auth/me`
-Fetches current authenticated user context and workspace memberships.
+---
+
+### `POST /api/v1/auth/logout`
+Revokes the current session and clears the session cookie.
+- **URL**: `/api/v1/auth/logout` or `/auth/logout`
+- **Method**: `POST`
+- **Authentication**: Valid session cookie + `X-CSRF-Token` header
+- **Response Headers**:
+  ```text
+  Set-Cookie: kontexa_session=; Path=/; Max-Age=0
+  ```
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "status": "ok",
+    "message": "Logged out successfully"
+  }
+  ```
+
+---
+
+### `GET /api/v1/auth/me`
+Fetches the current authenticated user context and workspace memberships.
+- **URL**: `/api/v1/auth/me` or `/auth/me`
+- **Method**: `GET`
+- **Authentication**: Valid session cookie
 - **Response (`200 OK`)**:
   ```json
   {
     "id": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
     "email": "developer@example.com",
     "name": "Jane Developer",
+    "is_active": true,
+    "created_at": "2026-11-25T01:00:00Z",
     "workspaces": [
       {
         "workspace_id": "w1x2y3z4-a5b6-7c8d-9e0f-1a2b3c4d5e6f",
@@ -177,6 +209,26 @@ Fetches current authenticated user context and workspace memberships.
     ]
   }
   ```
+
+---
+
+### `GET /api/v1/auth/csrf`
+Generates a signed HMAC-SHA256 CSRF token for the authenticated session.
+- **URL**: `/api/v1/auth/csrf` or `/auth/csrf`
+- **Method**: `GET`
+- **Authentication**: Valid session cookie
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "csrf_token": "csrf_payload.signature"
+  }
+  ```
+
+---
+
+## 3. Planned Target Contracts (Sprint 08–28)
+
+### 3.1 Workspace & Membership Contracts (`/api/v1/workspaces`)
 
 ---
 

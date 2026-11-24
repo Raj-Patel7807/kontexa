@@ -33,6 +33,15 @@ Security is an essential requirement for Kontexa. Because the platform connects 
 ## 3. Secret Management & Cryptography
 
 - **Environment Variables**: Managed via Pydantic Settings (`kontexa.core.config.Settings`). Sensitive values are loaded from `.env` or system environment and never hardcoded.
+- **Password Hashing**: Implemented using PBKDF2-HMAC-SHA256 with 600,000 iterations (OWASP recommendation) and unique 16-byte cryptographically secure salts.
+- **Session Tokens & Cookies**:
+  - Session tokens are generated with 32 bytes of cryptographic entropy (`secrets.token_urlsafe(32)`).
+  - Only the SHA-256 digest (`token_hash`) is stored in the database `user_sessions` table.
+  - Session cookies are set with `HttpOnly=True`, `SameSite=Lax` (or `Strict`), `Secure=True` in production, and scoped to API endpoints.
+  - Tokens are never stored in browser `localStorage`.
+- **CSRF Protection**:
+  - State-modifying endpoints (`/logout` and future mutations) require an `X-CSRF-Token` header.
+  - CSRF tokens are signed HMAC-SHA256 digests encoding the user ID, session token hash, and expiry timestamp, validated on the backend.
 - **TLS/SSL Encryption**:
   - Connections to PostgreSQL require TLS (`DATABASE_SSL_MODE=require` for Aiven).
   - External API calls (AI providers, GitHub) use HTTPS with strict certificate validation.

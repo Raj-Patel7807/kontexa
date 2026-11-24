@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from kontexa.api.auth import router as auth_router
 from kontexa.api.health import router as health_router
 from kontexa.core.config import Settings
 from kontexa.core.config import settings as default_settings
@@ -21,6 +22,10 @@ OPENAPI_TAGS = [
     {
         "name": "Health",
         "description": "Liveness, readiness, and dependency health verification endpoints.",
+    },
+    {
+        "name": "Authentication",
+        "description": "User account registration, session authentication, and logout endpoints.",
     },
     {
         "name": "System",
@@ -107,6 +112,9 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
 
     # Register API routers
     app.include_router(health_router)
+    app.include_router(auth_router, prefix=app_settings.api_v1_prefix)
+    # Also mount auth router at /auth for convenient top-level routing
+    app.include_router(auth_router)
 
     return app
 
