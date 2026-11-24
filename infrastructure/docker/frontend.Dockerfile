@@ -14,6 +14,7 @@ ARG BACKEND_URL=http://backend:8000
 COPY --from=deps /app/node_modules ./node_modules
 COPY frontend/ ./
 ENV NEXT_TELEMETRY_DISABLED=1 \
+    DOCKER_BUILD=1 \
     BACKEND_URL=${BACKEND_URL}
 RUN npm run build
 
