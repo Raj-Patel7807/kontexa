@@ -4,6 +4,7 @@ from sqlalchemy import BigInteger, String, inspect
 from sqlalchemy.dialects.postgresql import JSONB
 
 from kontexa.database.models.ai import AIModel, AIProvider, AIUsage
+from kontexa.database.models.approvals import Approval
 from kontexa.database.models.audit import AuditLog
 from kontexa.database.models.base import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
 from kontexa.database.models.conversations import Conversation
@@ -12,9 +13,12 @@ from kontexa.database.models.integrations import Integration
 from kontexa.database.models.memory import MemoryEntry
 from kontexa.database.models.messages import Message, MessagePart
 from kontexa.database.models.projects import Project
+from kontexa.database.models.repositories import Repository
+from kontexa.database.models.sessions import UserSession
+from kontexa.database.models.sync_jobs import SyncJob
 from kontexa.database.models.tools import AgentRun, Tool
 from kontexa.database.models.users import User
-from kontexa.database.models.workspaces import Workspace, WorkspaceMember
+from kontexa.database.models.workspaces import Workspace, WorkspaceInvitation, WorkspaceMember
 from kontexa.database.session import Base
 
 # ---------------------------------------------------------------------------
@@ -207,7 +211,11 @@ def test_conversation_has_expected_columns() -> None:
 
 def test_conversation_workspace_fk_cascades() -> None:
     """Verify Conversation.workspace_id FK uses ON DELETE CASCADE."""
-    fk = next(iter(Conversation.__table__.c.workspace_id.foreign_keys))
+    fk = next(
+        fk
+        for fk in Conversation.__table__.c.workspace_id.foreign_keys
+        if fk.column.table.name == "workspaces"
+    )
     assert fk.ondelete == "CASCADE"
 
 
@@ -484,7 +492,11 @@ def test_agent_run_records_structured_input_and_output() -> None:
     assert isinstance(AgentRun.__table__.c.inputs.type, JSONB)
     assert isinstance(AgentRun.__table__.c.outputs.type, JSONB)
     assert AgentRun.__table__.c.status.type.length == 20
-    assert {index.name for index in AgentRun.__table__.indexes} == {"idx_agent_runs_tool"}
+    assert {index.name for index in AgentRun.__table__.indexes} == {
+        "idx_agent_runs_tool",
+        "idx_agent_runs_workspace",
+        "idx_agent_runs_project",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -608,8 +620,10 @@ def test_all_models_registered_in_base_metadata() -> None:
     table_names = set(Base.metadata.tables.keys())
     expected = {
         "users",
+        "user_sessions",
         "workspaces",
         "workspace_members",
+        "workspace_invitations",
         "projects",
         "conversations",
         "messages",
@@ -621,9 +635,169 @@ def test_all_models_registered_in_base_metadata() -> None:
         "memory_entries",
         "tools",
         "agent_runs",
+        "sync_jobs",
+        "approvals",
+        "repositories",
         "ai_providers",
         "ai_models",
         "ai_usage",
         "audit_logs",
     }
     assert expected.issubset(table_names)
+
+
+# ---------------------------------------------------------------------------
+# Sprint 06 Tenancy and Foundation Model Tests
+# ---------------------------------------------------------------------------
+
+
+def test_user_session_model_structure() -> None:
+    """Verify UserSession model defines token hash, user relation, and expiration."""
+    assert UserSession.__tablename__ == "user_sessions"
+    mapper = inspect(UserSession)
+    column_names = {col.key for col in mapper.column_attrs}
+    expected = {
+        "id",
+        "user_id",
+        "token_hash",
+        "user_agent",
+        "ip_address",
+        "expires_at",
+        "revoked_at",
+        "created_at",
+        "updated_at",
+    }
+    assert expected.issubset(column_names)
+    assert {index.name for index in UserSession.__table__.indexes} == {
+        "idx_user_sessions_user_id",
+        "idx_user_sessions_token_hash",
+        "idx_user_sessions_expires",
+    }
+
+
+def test_workspace_invitation_model_structure() -> None:
+    """Verify WorkspaceInvitation defines tenant scoping and secure token hashes."""
+    assert WorkspaceInvitation.__tablename__ == "workspace_invitations"
+    mapper = inspect(WorkspaceInvitation)
+    column_names = {col.key for col in mapper.column_attrs}
+    expected = {
+        "id",
+        "workspace_id",
+        "email",
+        "role",
+        "token_hash",
+        "invited_by_user_id",
+        "status",
+        "expires_at",
+        "created_at",
+        "updated_at",
+    }
+    assert expected.issubset(column_names)
+
+
+def test_sync_job_model_structure() -> None:
+    """Verify SyncJob tracks background connector processing state."""
+    assert SyncJob.__tablename__ == "sync_jobs"
+    mapper = inspect(SyncJob)
+    column_names = {col.key for col in mapper.column_attrs}
+    expected = {
+        "id",
+        "workspace_id",
+        "project_id",
+        "integration_id",
+        "job_type",
+        "status",
+        "trigger",
+        "started_at",
+        "ended_at",
+        "records_processed",
+        "error_message",
+        "metadata_",
+        "created_at",
+        "updated_at",
+    }
+    assert expected.issubset(column_names)
+
+
+def test_approval_model_structure() -> None:
+    """Verify Approval model supports human-in-the-loop plan hashing."""
+    assert Approval.__tablename__ == "approvals"
+    mapper = inspect(Approval)
+    column_names = {col.key for col in mapper.column_attrs}
+    expected = {
+        "id",
+        "workspace_id",
+        "project_id",
+        "agent_run_id",
+        "requested_by_user_id",
+        "approved_by_user_id",
+        "tool_name",
+        "action_summary",
+        "action_payload",
+        "plan_hash",
+        "status",
+        "decision_reason",
+        "expires_at",
+        "created_at",
+        "updated_at",
+    }
+    assert expected.issubset(column_names)
+    assert "idx_approvals_plan_hash" in {index.name for index in Approval.__table__.indexes}
+
+
+def test_repository_model_structure() -> None:
+    """Verify Repository model captures project-scoped GitHub metadata."""
+    assert Repository.__tablename__ == "repositories"
+    mapper = inspect(Repository)
+    column_names = {col.key for col in mapper.column_attrs}
+    expected = {
+        "id",
+        "workspace_id",
+        "project_id",
+        "integration_id",
+        "remote_id",
+        "name",
+        "full_name",
+        "default_branch",
+        "clone_url",
+        "status",
+        "last_synced_at",
+        "index_metadata",
+        "created_at",
+        "updated_at",
+        "deleted_at",
+    }
+    assert expected.issubset(column_names)
+
+
+def test_project_composite_unique_constraint() -> None:
+    """Verify Project defines composite uniqueness for (id, workspace_id)."""
+    constraint_names = {c.name for c in Project.__table__.constraints}
+    assert "uq_projects_id_workspace_id" in constraint_names
+
+
+def test_document_workspace_scoping_and_composite_fk() -> None:
+    """Verify Document enforces explicit workspace scoping and composite integrity."""
+    assert "workspace_id" in Document.__table__.c
+    fk_names = {c.name for c in Document.__table__.foreign_key_constraints}
+    assert "fk_documents_project_workspace" in fk_names
+
+
+def test_tool_workspace_scoping_and_composite_fk() -> None:
+    """Verify Tool enforces explicit workspace scoping and composite integrity."""
+    assert "workspace_id" in Tool.__table__.c
+    fk_names = {c.name for c in Tool.__table__.foreign_key_constraints}
+    assert "fk_tools_project_workspace" in fk_names
+
+
+def test_conversation_composite_fk_to_project() -> None:
+    """Verify Conversation enforces composite (project_id, workspace_id) integrity."""
+    fk_names = {c.name for c in Conversation.__table__.foreign_key_constraints}
+    assert "fk_conversations_project_workspace" in fk_names
+
+
+def test_message_role_column_exists() -> None:
+    """Verify Message model has a role column with user default."""
+    role_col = Message.__table__.c.role
+    assert role_col is not None
+    assert role_col.nullable is False

@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import TIMESTAMP, ForeignKey, Index, String, text
+from sqlalchemy import TIMESTAMP, ForeignKey, ForeignKeyConstraint, Index, String, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,8 +15,22 @@ class Tool(UUIDPrimaryKeyMixin, Base):
     """Custom action or tool defined per project (e.g. web search, code executor)."""
 
     __tablename__ = "tools"
-    __table_args__ = (Index("idx_tools_project", "project_id"),)
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "workspace_id"],
+            ["projects.id", "projects.workspace_id"],
+            ondelete="CASCADE",
+            name="fk_tools_project_workspace",
+        ),
+        Index("idx_tools_workspace", "workspace_id"),
+        Index("idx_tools_project", "project_id"),
+    )
 
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     project_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE"),
@@ -33,8 +47,22 @@ class AgentRun(UUIDPrimaryKeyMixin, Base):
     """Log of a single tool or AI agent execution run."""
 
     __tablename__ = "agent_runs"
-    __table_args__ = (Index("idx_agent_runs_tool", "tool_id"),)
+    __table_args__ = (
+        Index("idx_agent_runs_workspace", "workspace_id"),
+        Index("idx_agent_runs_project", "project_id"),
+        Index("idx_agent_runs_tool", "tool_id"),
+    )
 
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=True,
+    )
     tool_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("tools.id", ondelete="SET NULL"),

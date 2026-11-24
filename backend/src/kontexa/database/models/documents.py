@@ -4,7 +4,16 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import TIMESTAMP, ForeignKey, Index, Integer, Text, UniqueConstraint, text
+from sqlalchemy import (
+    TIMESTAMP,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -19,8 +28,22 @@ class Document(UUIDPrimaryKeyMixin, Base):
     """A high-level knowledge document (e.g. a Notion page, GitHub PR, Slack thread)."""
 
     __tablename__ = "documents"
-    __table_args__ = (Index("idx_documents_project", "project_id"),)
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "workspace_id"],
+            ["projects.id", "projects.workspace_id"],
+            ondelete="CASCADE",
+            name="fk_documents_project_workspace",
+        ),
+        Index("idx_documents_workspace", "workspace_id"),
+        Index("idx_documents_project", "project_id"),
+    )
 
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     project_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE"),

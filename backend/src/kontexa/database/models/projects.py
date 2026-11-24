@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import ForeignKey, Index, String, Text
+from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,6 +15,7 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
 
     __tablename__ = "projects"
     __table_args__ = (
+        UniqueConstraint("id", "workspace_id", name="uq_projects_id_workspace_id"),
         Index("idx_projects_workspace_slug", "workspace_id", "slug", unique=True),
         Index("idx_projects_deleted", "deleted_at", postgresql_where="deleted_at IS NULL"),
     )

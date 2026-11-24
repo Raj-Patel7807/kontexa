@@ -53,7 +53,9 @@ To avoid building shallow integrations that provide little engineering value, co
 ### Phase 2: Database, Tenancy & Application Shell (Sprints 05–09)
 - **Sprint 05 — Backend foundation and configuration** `[COMPLETED]`
   - Pydantic Settings hardening, production fail-fast validators, structured logging with correlation request IDs, custom exception hierarchy and handlers, OpenAPI tags, liveness/readiness probes.
-- **Sprint 06 — Database foundation and tenancy-ready schema** `[NEXT SPRINT]`
+- **Sprint 06 — Database foundation and tenancy-ready schema** `[COMPLETED]`
+  - Review and finalize SQLAlchemy models and Alembic migrations. 23 tables, composite foreign keys preventing cross-tenant leakage (`projects(id, workspace_id)`), user sessions, workspace invitations, sync jobs, agent execution approvals, repository metadata, offline upgrade/downgrade tests.
+- **Sprint 07 — Authentication, session management and identity** `[NEXT SPRINT]`
   - Finalize SQLAlchemy models and Alembic migrations; resolve composite foreign-key constraints; migration upgrade tests.
 - **Sprint 07 — Authentication, session management and identity**
   - User registration, password hashing/OAuth, session management, auth middleware, and protected endpoints.

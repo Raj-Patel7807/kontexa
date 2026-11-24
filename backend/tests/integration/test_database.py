@@ -20,8 +20,10 @@ def test_all_schema_tables_are_registered() -> None:
     """Verify Alembic can discover every table through the central model registry."""
     assert set(Base.metadata.tables) == {
         "users",
+        "user_sessions",
         "workspaces",
         "workspace_members",
+        "workspace_invitations",
         "projects",
         "conversations",
         "messages",
@@ -33,6 +35,9 @@ def test_all_schema_tables_are_registered() -> None:
         "memory_entries",
         "tools",
         "agent_runs",
+        "sync_jobs",
+        "approvals",
+        "repositories",
         "ai_providers",
         "ai_models",
         "ai_usage",

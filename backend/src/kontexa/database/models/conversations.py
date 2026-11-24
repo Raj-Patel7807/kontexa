@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Index, String
+from sqlalchemy import Boolean, ForeignKey, ForeignKeyConstraint, Index, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,6 +15,12 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
 
     __tablename__ = "conversations"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "workspace_id"],
+            ["projects.id", "projects.workspace_id"],
+            ondelete="SET NULL",
+            name="fk_conversations_project_workspace",
+        ),
         Index("idx_conversations_workspace", "workspace_id"),
         Index("idx_conversations_project", "project_id"),
         Index("idx_conversations_deleted", "deleted_at", postgresql_where="deleted_at IS NULL"),
@@ -30,6 +36,7 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
         ForeignKey("projects.id", ondelete="SET NULL"),
         nullable=True,
     )
+
     title: Mapped[str | None] = mapped_column(String, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True, default=None)

@@ -1,8 +1,9 @@
 """Workspace and workspace membership models."""
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, String
+from sqlalchemy import TIMESTAMP, ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -45,3 +46,29 @@ class WorkspaceMember(Base):
     role: Mapped[str] = mapped_column(String(50), nullable=False)
 
     workspace: Mapped["Workspace"] = relationship(back_populates="members")
+
+
+class WorkspaceInvitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Pending or resolved invitation to join a workspace."""
+
+    __tablename__ = "workspace_invitations"
+    __table_args__ = (
+        Index("idx_workspace_invitations_workspace_email", "workspace_id", "email"),
+        Index("idx_workspace_invitations_token_hash", "token_hash", unique=True),
+    )
+
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    email: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(String(50), nullable=False, default="member")
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    invited_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)

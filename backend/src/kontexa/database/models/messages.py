@@ -26,6 +26,7 @@ class Message(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="user")
     content: Mapped[str] = mapped_column(Text, nullable=False)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True, default=None)
 
