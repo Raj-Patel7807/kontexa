@@ -14,6 +14,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  secret-scanning:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks secret detection
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   backend-ci:
     name: Backend CI
     uses: ./.github/workflows/backend.yml
@@ -24,4 +38,5 @@ jobs:
 
   infrastructure-ci:
     name: Infrastructure CI
+    needs: [backend-ci, frontend-ci]
     uses: ./.github/workflows/infrastructure.yml

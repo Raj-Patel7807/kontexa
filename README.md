@@ -107,20 +107,25 @@ npm run dev
 
 ```bash
 # Using Make
-make lint
-make test
+make check     # Full repository validation (lint, typecheck, test)
+make lint      # Code style checks
+make typecheck # Static type checks (mypy + tsc)
+make test      # Pytest and frontend tests
+make build     # Next.js production build
 
 # Or directly:
 # Backend
 cd backend
 uv run ruff check .
 uv run ruff format --check .
+uv run mypy
 uv run pytest
 
 # Frontend
 cd frontend
 npm run lint
 npm run typecheck
+npm test
 npm run build
 ```
 

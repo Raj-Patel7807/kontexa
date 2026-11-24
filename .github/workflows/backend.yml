@@ -2,10 +2,6 @@ name: Backend CI
 
 on:
   workflow_call:
-  # push:
-  #   branches: [ main ]
-  # pull_request:
-  #   branches: [ main ]
 
 permissions:
   contents: read
@@ -14,7 +10,6 @@ jobs:
   backend-checks:
     name: Backend Checks
     runs-on: ubuntu-latest
-
     timeout-minutes: 10
 
     steps:
@@ -42,6 +37,14 @@ jobs:
       - name: Run Ruff formatter check
         working-directory: backend
         run: uv run ruff format --check .
+
+      - name: Run Mypy static type check
+        working-directory: backend
+        run: uv run mypy
+
+      - name: Verify Alembic migration consistency
+        working-directory: backend
+        run: uv run alembic heads
 
       - name: Run Pytest
         working-directory: backend

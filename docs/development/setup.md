@@ -31,10 +31,7 @@ Copy-Item backend/.env.example backend/.env
 Copy-Item frontend/.env.example frontend/.env
 ```
 
-In `backend/.env`, ensure `DATABASE_URL` is configured:
-```env
-DATABASE_URL=postgresql+asyncpg://kontexa:kontexa_pass@localhost:5432/kontexa_db
-```
+`backend/.env.example` includes a pre-configured local `DATABASE_URL` (`postgresql+asyncpg://kontexa:kontexa_pass@localhost:5432/kontexa_db`), so a fresh clone works immediately after copying the files.
 
 ---
 
@@ -61,10 +58,10 @@ npm install
 ## 4. Running the Local Stack
 
 ### Option A: Complete Containerized Stack (Recommended)
-Starts PostgreSQL 16 (with pgvector), Redis 7, Backend, and Frontend in Docker:
+Starts PostgreSQL 16 (with pgvector), Redis 7, Backend, Worker, and Frontend in Docker:
 
 ```bash
-# Start services in background
+# Start all services in background
 make up
 # (Or: docker compose -f infrastructure/docker/docker-compose.yml up -d)
 
@@ -76,20 +73,25 @@ make down
 ```
 
 ### Option B: Running Services Locally Outside Docker
-Start PostgreSQL and Redis in Docker, then run Backend and Frontend locally with live code reload:
+Start PostgreSQL and Redis in Docker, apply migrations, then run Backend, Worker, and Frontend locally:
 
 ```bash
 # 1. Start only database and cache
 docker compose -f infrastructure/docker/docker-compose.yml up -d postgres redis
 
 # 2. Apply database migrations
-cd backend
-uv run alembic upgrade head
+make migrate
+# (Or: cd backend && uv run alembic upgrade head)
 
 # 3. Start Backend server
+cd backend
 uv run uvicorn kontexa.main:app --reload --port 8000
 
-# 4. In a separate terminal, start Frontend server
+# 4. In a separate terminal, start Background Worker
+cd backend
+uv run python -m kontexa.worker.main
+
+# 5. In a separate terminal, start Frontend server
 cd frontend
 npm run dev
 ```
@@ -97,3 +99,14 @@ npm run dev
 - Backend API: `http://localhost:8000` (Health: `http://localhost:8000/health`)
 - Swagger Docs: `http://localhost:8000/docs`
 - Frontend UI: `http://localhost:3000`
+
+---
+
+## 5. Verification Commands
+
+Run full repository verification with one command:
+
+```bash
+make check
+```
+*(Runs backend Ruff linting, Ruff formatting check, Mypy typecheck, Pytest suite, frontend ESLint, TypeScript typecheck, and frontend tests).*

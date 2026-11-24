@@ -20,8 +20,10 @@ This document provides a truthful, evidence-backed status report of all system c
 | **Foundation** | Backend FastAPI Factory | **Implemented** | `backend/src/kontexa/main.py` | Complete app factory, CORS middleware, lifespan management. |
 | **Foundation** | Pydantic Settings & TLS | **Implemented** | `backend/src/kontexa/core/config.py` | Typed settings, Aiven SSL context generation. Covered in `test_config.py`. |
 | **Foundation** | Health & Readiness Checks | **Implemented** | `backend/src/kontexa/api/health.py`, `core/health.py` | Concurrent PostgreSQL & Redis ping, latency tracking, 503 on failure. Covered in `test_health.py`. |
-| **Infrastructure** | Docker Compose Stack | **Implemented** | `infrastructure/docker/docker-compose.yml` | PostgreSQL 16 (pgvector), Redis 7, backend, and frontend containers configured. |
-| **Infrastructure** | Continuous Integration | **Implemented** | `.github/workflows/ci.yml` | Backend lint/format/test, frontend lint/typecheck/build, Compose integration checks. |
+| **Foundation** | Background Worker Process | **Implemented** | `backend/src/kontexa/worker/main.py` | Worker lifecycle, dependency checks, graceful shutdown. Covered in `test_worker.py`. |
+| **Foundation** | Static Type Checking | **Implemented** | `backend/pyproject.toml` (mypy), `frontend/tsconfig.json` | 100% typechecked with Mypy and `tsc --noEmit`. Verified in CI. |
+| **Infrastructure** | Docker Compose Stack | **Implemented** | `infrastructure/docker/docker-compose.yml` | PostgreSQL 16 (pgvector), Redis 7, backend, worker, and frontend containers configured. |
+| **Infrastructure** | Continuous Integration | **Implemented** | `.github/workflows/ci.yml` | Backend lint/format/typecheck/test, frontend lint/typecheck/test/build, Compose integration checks, and Gitleaks secret scanning. |
 | **Frontend** | Landing Page Web UI | **Partial** | `frontend/src/app/page.tsx` | Next.js 16 App Router landing page. Clean Turbopack build and linting. Live health dashboard was removed in prior commit; product UI is not connected to APIs. |
 | **Database** | Database ORM Models | **Partial** | `backend/src/kontexa/database/models/` | 18 SQLAlchemy 2.0 tables mapped and tested (`test_models.py`), but no domain services read/write them yet. |
 | **Database** | Alembic Migrations | **Partial** | `backend/migrations/versions/` | Initial schema (`20260811_0001`) and hardening (`20260904_0002`). Applied in Docker CI, but no domain data populates them. |
@@ -36,16 +38,3 @@ This document provides a truthful, evidence-backed status report of all system c
 | **Connectors** | GitHub Repository Intelligence | **Planned** | None | No GitHub App, webhook, or repository indexing code exists. Scheduled for Sprints 15–18. |
 | **Agent Tasks** | Sandboxed Execution & Tool Runs | **Planned** | `backend/src/kontexa/database/models/tools.py` (model only) | Zero sandbox execution, approval hash validation, or tool dispatchers exist. Scheduled for Sprints 19–21. |
 | **Cross-Source** | Context Graph & Second Connector | **Planned** | `memory_entries`, `audit_logs` (models only) | Zero cross-source correlation or audit logging producers exist. Scheduled for Sprints 22–25. |
-
----
-
-## Known Discrepancies Resolved in Sprint 01
-
-1. **Frontend Health Dashboard Discrepancy**:
-   - *Previous Documentation Claim*: Stated that the frontend web UI at `/` actively polls `/api/health` every 15 seconds and displays backend, PostgreSQL, and Redis status.
-   - *Actual Implementation*: The health polling dashboard was replaced in commit `d44dd0b9` with a static marketing landing page.
-   - *Resolution*: Documentation updated to correctly mark frontend product UI as **`Partial`** and document that the landing page is static, while the backend health API remains fully **`Implemented`** and tested.
-
-2. **Schema Models vs Feature State**:
-   - *Previous State*: 18 database tables exist in SQLAlchemy models and migrations, which could lead an observer to assume features like chat, document retrieval, and tool execution exist.
-   - *Resolution*: All 18 tables are explicitly cataloged as **`Partial`** persistence foundations. All associated business workflows and APIs are confirmed as **`Planned`**.

@@ -45,10 +45,10 @@ To avoid building shallow integrations that provide little engineering value, co
   - Separate long-term ecosystem vision from first-release MVP scope.
   - Define connector roadmap (GitHub deep connector; Linear/Jira secondary; Slack/Gmail/Notion/Sentry deferred).
   - Define testable acceptance criteria across all MVP capabilities.
-- **Sprint 03 — Architecture, ADRs and system contracts** `[CURRENT SPRINT]`
+- **Sprint 03 — Architecture, ADRs and system contracts** `[COMPLETED]`
   - Target modular-monolith design, worker architecture, streaming contracts (SSE), connector interfaces, retrieval pipelines, AI gateway boundaries, and ADRs (ADR-010 through ADR-015).
-- **Sprint 04 — Final repository structure, local developer experience and CI**
-  - Hardening layout, task runners, pre-commit hooks, dependency caching, reproducible lockfiles.
+- **Sprint 04 — Final repository structure, local developer experience and CI** `[CURRENT SPRINT]`
+  - Hardening layout, background worker foundation, Mypy type-checking, pre-commit hooks, Docker Compose with worker service, Makefile check runner, Gitleaks secret scanning in CI.
 
 ### Phase 2: Database, Tenancy & Application Shell (Sprints 05–09)
 - **Sprint 05 — Backend foundation and configuration**

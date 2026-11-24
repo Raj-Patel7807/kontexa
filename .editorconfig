@@ -12,7 +12,7 @@ indent_size = 4
 indent_size = 4
 max_line_length = 100
 
-[*.{js,jsx,ts,tsx,json,yml,yaml,md}]
+[*.{js,jsx,ts,tsx,json,yml,yaml,md,css,mjs}]
 indent_size = 2
 
 [Makefile]

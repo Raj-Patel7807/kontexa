@@ -2,10 +2,6 @@ name: Frontend CI
 
 on:
   workflow_call:
-  # push:
-  #   branches: [ main ]
-  # pull_request:
-  #   branches: [ main ]
 
 permissions:
   contents: read
@@ -14,7 +10,6 @@ jobs:
   frontend-checks:
     name: Frontend Checks
     runs-on: ubuntu-latest
-
     timeout-minutes: 15
 
     steps:
@@ -39,6 +34,10 @@ jobs:
       - name: Run TypeScript typecheck
         working-directory: frontend
         run: npm run typecheck
+
+      - name: Run Frontend test suite
+        working-directory: frontend
+        run: npm test
 
       - name: Build Next.js application
         working-directory: frontend

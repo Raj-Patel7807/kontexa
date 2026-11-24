@@ -1,16 +1,19 @@
-.PHONY: help setup dev up down test lint format build clean
+.PHONY: help setup dev up down test lint typecheck format build clean check migrate
 
 help: ## Display available Makefile commands and descriptions
 	@echo "Kontexa Development Commands:"
-	@echo "  make setup   - Install backend (uv) and frontend (npm) dependencies"
-	@echo "  make dev     - Run backend and frontend local development servers"
-	@echo "  make up      - Start Docker Compose services (PostgreSQL, Redis, Apps)"
-	@echo "  make down    - Stop Docker Compose services"
-	@echo "  make test    - Run backend pytest suite and frontend typecheck"
-	@echo "  make lint    - Run ruff linter on backend and ESLint on frontend"
-	@echo "  make format  - Format backend Python code with ruff"
-	@echo "  make build   - Build frontend Next.js production bundle"
-	@echo "  make clean   - Remove Python __pycache__, build output, and caches"
+	@echo "  make setup     - Install backend (uv) and frontend (npm) dependencies"
+	@echo "  make dev       - Run backend and frontend local development servers"
+	@echo "  make up        - Start Docker Compose services (PostgreSQL, Redis, Backend, Worker, Frontend)"
+	@echo "  make down      - Stop Docker Compose services"
+	@echo "  make test      - Run backend pytest suite and frontend test suite"
+	@echo "  make lint      - Run ruff linter on backend and ESLint on frontend"
+	@echo "  make typecheck - Run mypy on backend and tsc on frontend"
+	@echo "  make format    - Format backend Python code with ruff"
+	@echo "  make build     - Build frontend Next.js production bundle"
+	@echo "  make check     - Run full repository validation (lint, typecheck, test)"
+	@echo "  make migrate   - Apply Alembic migrations to configured database"
+	@echo "  make clean     - Remove Python __pycache__, build output, and caches"
 
 setup: ## Install backend and frontend dependencies
 	cd backend && uv sync
@@ -26,19 +29,28 @@ up: ## Start Docker Compose services
 down: ## Stop Docker Compose services
 	docker compose -f infrastructure/docker/docker-compose.yml down
 
-test: ## Run backend pytest test suite and frontend typecheck
+test: ## Run backend pytest test suite and frontend tests
 	cd backend && uv run pytest
-	cd frontend && npm run typecheck
+	cd frontend && npm test
 
 lint: ## Run code linter checks
 	cd backend && uv run ruff check .
 	cd frontend && npm run lint
+
+typecheck: ## Run static type checks
+	cd backend && uv run mypy
+	cd frontend && npm run typecheck
 
 format: ## Format codebases
 	cd backend && uv run ruff format .
 
 build: ## Build frontend production application
 	cd frontend && npm run build
+
+check: lint typecheck test ## Run full verification suite (lint, typecheck, test)
+
+migrate: ## Apply database migrations
+	cd backend && uv run alembic upgrade head
 
 clean: ## Remove caches and build artifacts
 	@echo "Cleaning cache and build directories..."

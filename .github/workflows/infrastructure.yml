@@ -31,8 +31,8 @@ jobs:
       - name: Apply Alembic migrations to clean PostgreSQL
         run: docker compose -f "$COMPOSE_FILE" run --rm --no-deps backend uv run alembic upgrade head
 
-      - name: Start application containers
-        run: docker compose -f "$COMPOSE_FILE" up -d --wait backend frontend
+      - name: Start application containers (Backend, Worker, Frontend)
+        run: docker compose -f "$COMPOSE_FILE" up -d --wait backend worker frontend
 
       - name: Verify backend readiness
         run: curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 1 http://localhost:8000/health

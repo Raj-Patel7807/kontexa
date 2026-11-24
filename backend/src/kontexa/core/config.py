@@ -103,4 +103,4 @@ class Settings(BaseSettings):
         return {"ssl": True}
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]
