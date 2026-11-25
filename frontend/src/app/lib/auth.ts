@@ -88,6 +88,19 @@ export async function getCurrentUserApi(): Promise<CurrentUser> {
   return res.json();
 }
 
+export async function getCsrfTokenApi(): Promise<{ csrf_token: string }> {
+  const res = await fetch(`${API_BASE}/api/v1/auth/csrf`, {
+    method: "GET",
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to get CSRF token");
+  }
+
+  return res.json();
+}
+
 export async function logoutApi(csrfToken?: string): Promise<void> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (csrfToken) {

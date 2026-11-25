@@ -57,9 +57,9 @@ To avoid building shallow integrations that provide little engineering value, co
   - Review and finalize SQLAlchemy models and Alembic migrations. 23 tables, composite foreign keys preventing cross-tenant leakage (`projects(id, workspace_id)`), user sessions, workspace invitations, sync jobs, agent execution approvals, repository metadata, offline upgrade/downgrade tests.
 - **Sprint 07 — Authentication and account lifecycle** `[COMPLETED]`
   - PBKDF2-HMAC-SHA256 password hashing and verification, secure HttpOnly/SameSite/Secure session cookies, SHA-256 session token hashing, HMAC-SHA256 CSRF protection, `/register`, `/login`, `/logout`, `/me`, `/csrf` endpoints, Next.js login/register/dashboard screens, and 100% test coverage.
-- **Sprint 08 — Workspace tenancy, membership and access control** `[NEXT SPRINT]`
-  - Workspace/project CRUD, member roles, tenant isolation verification, and cross-workspace access rejection tests.
-- **Sprint 09 — Frontend application shell and navigation**
+- **Sprint 08 — Workspace tenancy, membership and access control** `[COMPLETED]`
+  - Full workspace and project CRUD, role-based access control (`owner`, `admin`, `member`, `viewer`), centralized authorization dependency, cross-tenant isolation enforcement (IDOR prevention), membership management, responsive frontend workspace switcher, project grid, and member management.
+- **Sprint 09 — Frontend application shell and navigation** `[NEXT SPRINT]`
   - Responsive authenticated application shell, workspace switcher, project sidebar, loading and error states.
 
 ### Phase 3: Conversational AI & Knowledge Retrieval (Sprints 10–14)

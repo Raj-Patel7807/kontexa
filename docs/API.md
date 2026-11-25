@@ -226,9 +226,94 @@ Generates a signed HMAC-SHA256 CSRF token for the authenticated session.
 
 ---
 
-## 3. Planned Target Contracts (Sprint 08–28)
+### `GET /api/v1/workspaces`
+List all workspaces where the authenticated user is an active member.
+- **URL**: `/api/v1/workspaces` or `/workspaces`
+- **Method**: `GET`
+- **Authentication**: Valid session cookie
+- **Response (`200 OK`)**: List of `WorkspaceDetailResponse` items.
 
-### 3.1 Workspace & Membership Contracts (`/api/v1/workspaces`)
+---
+
+### `POST /api/v1/workspaces`
+Create a new workspace; designates caller as `owner`.
+- **URL**: `/api/v1/workspaces` or `/workspaces`
+- **Method**: `POST`
+- **Authentication**: Valid session cookie + `X-CSRF-Token` header
+- **Request Body**: `{"name": "string", "slug": "optional-slug"}`
+- **Response (`201 Created`)**: `WorkspaceResponse`.
+
+---
+
+### `GET /api/v1/workspaces/{workspace_id}`
+Get workspace details and caller's verified role.
+- **URL**: `/api/v1/workspaces/{workspace_id}`
+- **Method**: `GET`
+- **Authentication**: Valid session cookie (caller must be a member; returns 404 on cross-tenant access)
+
+---
+
+### `PATCH /api/v1/workspaces/{workspace_id}`
+Update workspace settings (name, slug). Requires `admin` or `owner` role.
+- **URL**: `/api/v1/workspaces/{workspace_id}`
+- **Method**: `PATCH`
+- **Authentication**: Valid session cookie + `X-CSRF-Token` header
+
+---
+
+### `DELETE /api/v1/workspaces/{workspace_id}`
+Soft-deletes a workspace. Only the `owner` can delete.
+- **URL**: `/api/v1/workspaces/{workspace_id}`
+- **Method**: `DELETE`
+- **Authentication**: Valid session cookie + `X-CSRF-Token` header
+
+---
+
+### `GET /api/v1/workspaces/{workspace_id}/members`
+List members in the workspace. Requires `viewer` role or above.
+- **URL**: `/api/v1/workspaces/{workspace_id}/members`
+- **Method**: `GET`
+- **Authentication**: Valid session cookie
+
+---
+
+### `POST /api/v1/workspaces/{workspace_id}/members`
+Add a member by email to the workspace. Requires `admin` or `owner` role.
+- **URL**: `/api/v1/workspaces/{workspace_id}/members`
+- **Method**: `POST`
+- **Authentication**: Valid session cookie + `X-CSRF-Token` header
+- **Request Body**: `{"email": "string", "role": "member"}`
+
+---
+
+### `GET /api/v1/workspaces/{workspace_id}/projects`
+List projects scoped to the workspace.
+- **URL**: `/api/v1/workspaces/{workspace_id}/projects`
+- **Method**: `GET`
+- **Authentication**: Valid session cookie (caller must be a member)
+
+---
+
+### `POST /api/v1/workspaces/{workspace_id}/projects`
+Create a new project in the workspace. Requires `member` or above.
+- **URL**: `/api/v1/workspaces/{workspace_id}/projects`
+- **Method**: `POST`
+- **Authentication**: Valid session cookie + `X-CSRF-Token` header
+- **Request Body**: `{"name": "string", "slug": "optional-slug", "description": "optional"}`
+
+---
+
+### `GET /api/v1/workspaces/{workspace_id}/projects/{project_id}`
+Get project details ensuring strict workspace tenancy.
+- **URL**: `/api/v1/workspaces/{workspace_id}/projects/{project_id}`
+- **Method**: `GET`
+- **Authentication**: Valid session cookie (caller must belong to `workspace_id`)
+
+---
+
+## 3. Planned Target Contracts (Sprint 09–28)
+
+### 3.1 Conversational AI & Message Contracts (`/api/v1/conversations`)
 
 ---
 

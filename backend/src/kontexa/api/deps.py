@@ -1,8 +1,10 @@
 """Authentication dependencies for FastAPI route handlers."""
 
+import uuid
+from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, Path, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kontexa.core.config import Settings
@@ -11,7 +13,9 @@ from kontexa.core.security import verify_csrf_token
 from kontexa.database.models.sessions import UserSession
 from kontexa.database.models.users import User
 from kontexa.database.session import get_db
+from kontexa.schemas.workspaces import WorkspaceRole
 from kontexa.services.auth import AuthService
+from kontexa.services.workspaces import WorkspaceService
 
 
 def get_settings(request: Request) -> Settings:
@@ -27,6 +31,13 @@ def get_auth_service(
 ) -> AuthService:
     """Dependency provider for the domain authentication service."""
     return AuthService(db=db, settings=settings)
+
+
+def get_workspace_service(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> WorkspaceService:
+    """Dependency provider for workspace and project tenancy isolation operations."""
+    return WorkspaceService(db=db)
 
 
 async def get_current_user_and_session(
@@ -54,6 +65,25 @@ async def get_current_user(
     """Dependency yielding the currently authenticated User model."""
     user, _, _ = auth_ctx
     return user
+
+
+def require_workspace_membership(
+    min_role: str = WorkspaceRole.VIEWER,
+) -> Callable[..., object]:
+    """Dependency factory enforcing workspace membership and role authorization."""
+
+    async def _workspace_auth_dependency(
+        workspace_id: Annotated[uuid.UUID, Path(description="Target workspace identifier")],
+        user: Annotated[User, Depends(get_current_user)],
+        ws_service: Annotated[WorkspaceService, Depends(get_workspace_service)],
+    ) -> str:
+        return await ws_service.require_workspace_access(
+            workspace_id=workspace_id,
+            user_id=user.id,
+            required_role=min_role,
+        )
+
+    return _workspace_auth_dependency
 
 
 async def require_csrf(

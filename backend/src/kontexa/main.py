@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from kontexa.api.auth import router as auth_router
 from kontexa.api.health import router as health_router
+from kontexa.api.workspaces import router as workspaces_router
 from kontexa.core.config import Settings
 from kontexa.core.config import settings as default_settings
 from kontexa.core.exceptions import register_exception_handlers
@@ -26,6 +27,10 @@ OPENAPI_TAGS = [
     {
         "name": "Authentication",
         "description": "User account registration, session authentication, and logout endpoints.",
+    },
+    {
+        "name": "Workspaces & Projects",
+        "description": "Multi-tenant workspace isolation, RBAC membership, and project CRUD.",
     },
     {
         "name": "System",
@@ -115,6 +120,8 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
     app.include_router(auth_router, prefix=app_settings.api_v1_prefix)
     # Also mount auth router at /auth for convenient top-level routing
     app.include_router(auth_router)
+    app.include_router(workspaces_router, prefix=app_settings.api_v1_prefix)
+    app.include_router(workspaces_router)
 
     return app
 
