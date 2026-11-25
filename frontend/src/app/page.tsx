@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 
 export default function Home() {
   const [copied, setCopied] = useState(false);
@@ -43,14 +44,27 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-400">
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
-              </span>
-              <span>Vercel Deployment Live</span>
-            </div>
+          {/* Navigation Links */}
+          <div className="flex items-center gap-3">
+            <Link
+              href="/chat"
+              className="hidden sm:inline-flex px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-900 rounded-lg transition-colors"
+            >
+              Chat
+            </Link>
+            <Link
+              href="/login"
+              className="px-3.5 py-1.5 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-900 rounded-lg transition-colors"
+            >
+              Sign In
+            </Link>
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors"
+            >
+              <span>Workspace</span>
+              <span className="text-[10px]">→</span>
+            </Link>
           </div>
         </div>
       </header>
@@ -77,26 +91,28 @@ export default function Home() {
 
           {/* Action CTAs */}
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition-all hover:opacity-95 active:scale-[0.98] sm:w-auto cursor-pointer"
+            <Link
+              href="/dashboard"
+              className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition-all hover:opacity-95 active:scale-[0.98] sm:w-auto cursor-pointer"
             >
-              <span>{copied ? "Command Copied!" : "Clone Repository"}</span>
-              <span className="font-mono text-xs opacity-75">
-                {copied ? "✓" : "→"}
-              </span>
-            </button>
+              <span>Launch Workspace</span>
+              <span className="font-mono text-xs opacity-75">→</span>
+            </Link>
 
-            <a
-              href="https://vercel.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-700/80 bg-slate-900/60 px-5 py-3 text-sm font-semibold text-slate-200 backdrop-blur-sm transition-colors hover:border-slate-600 hover:bg-slate-800/60 sm:w-auto"
+            <Link
+              href="/chat"
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-700/80 bg-slate-900/60 px-6 py-3.5 text-sm font-semibold text-slate-200 backdrop-blur-sm transition-colors hover:border-slate-600 hover:bg-slate-800/60 sm:w-auto"
             >
-              <span>Deployed on Vercel</span>
-              <span className="text-xs text-slate-400">↗</span>
-            </a>
+              <span>Open AI Chat</span>
+              <span className="text-xs text-indigo-400">⚡</span>
+            </Link>
+
+            <Link
+              href="/register"
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-5 py-3.5 text-sm font-semibold text-slate-300 hover:text-white hover:bg-slate-900 sm:w-auto transition-colors"
+            >
+              <span>Create Account</span>
+            </Link>
           </div>
 
           {/* Code pill */}
