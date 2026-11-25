@@ -61,9 +61,9 @@ To avoid building shallow integrations that provide little engineering value, co
   - Full workspace and project CRUD, role-based access control (`owner`, `admin`, `member`, `viewer`), centralized authorization dependency, cross-tenant isolation enforcement (IDOR prevention), membership management, responsive frontend workspace switcher, project grid, and member management.
 - **Sprint 09 — Frontend foundation and design system** `[COMPLETED]`
   - Responsive authenticated application shell, workspace switcher, project selector, accessible UI primitives (Button, Input, Modal, Badge, EmptyState, ErrorBoundary, Skeleton), organization settings page, real API data wiring, and keyboard navigation.
-- **Sprint 10 — Conversation and message persistence** `[NEXT SPRINT]`
-  - Conversation CRUD, multipart message persistence, thread history APIs, and frontend conversation view.
-- **Sprint 11 — AI gateway, provider abstraction and model registry**
+- **Sprint 10 — Conversation and message persistence** `[COMPLETED]`
+  - Conversation CRUD, multipart/text message persistence, thread history APIs, title auto-generation policy, idempotency deduplication, and Next.js chat interface with history sidebar and message composer.
+- **Sprint 11 — AI gateway, provider abstraction and model registry** `[NEXT SPRINT]`
   - Provider adapters (OpenAI, Anthropic, Gemini), mockable test provider, model configuration, and token accounting.
 - **Sprint 12 — Streamed chat experience**
   - SSE streaming endpoint, frontend streaming client, cancellation handling, markdown rendering.

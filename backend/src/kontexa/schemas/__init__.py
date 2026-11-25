@@ -8,6 +8,15 @@ from kontexa.schemas.auth import (
     UserProfileResponse,
     WorkspaceMembershipSummary,
 )
+from kontexa.schemas.conversations import (
+    ConversationCreateRequest,
+    ConversationDetailResponse,
+    ConversationResponse,
+    ConversationUpdateRequest,
+    MessageCreateRequest,
+    MessageResponse,
+    MessageRole,
+)
 from kontexa.schemas.workspaces import (
     AddMemberRequest,
     ProjectCreateRequest,
@@ -25,8 +34,15 @@ from kontexa.schemas.workspaces import (
 __all__ = [
     "AddMemberRequest",
     "AuthSessionResponse",
+    "ConversationCreateRequest",
+    "ConversationDetailResponse",
+    "ConversationResponse",
+    "ConversationUpdateRequest",
     "CurrentUserResponse",
     "LoginRequest",
+    "MessageCreateRequest",
+    "MessageResponse",
+    "MessageRole",
     "ProjectCreateRequest",
     "ProjectResponse",
     "ProjectUpdateRequest",

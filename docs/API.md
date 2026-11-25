@@ -311,9 +311,74 @@ Get project details ensuring strict workspace tenancy.
 
 ---
 
-## 3. Planned Target Contracts (Sprint 09–28)
+### `GET /api/v1/workspaces/{workspace_id}/conversations`
+List conversations scoped to a workspace with optional project filtering.
+- **URL**: `/api/v1/workspaces/{workspace_id}/conversations`
+- **Method**: `GET`
+- **Authentication**: Valid session cookie
+- **Query Parameters**: `project_id` (optional UUID), `limit` (default 50), `offset` (default 0)
+- **Response (`200 OK`)**: List of `ConversationResponse` items.
 
-### 3.1 Conversational AI & Message Contracts (`/api/v1/conversations`)
+---
+
+### `POST /api/v1/workspaces/{workspace_id}/conversations`
+Create a new conversation thread within the workspace.
+- **URL**: `/api/v1/workspaces/{workspace_id}/conversations`
+- **Method**: `POST`
+- **Authentication**: Valid session cookie + `X-CSRF-Token` header
+- **Request Body**: `{"project_id": "optional-uuid", "title": "optional-title"}`
+- **Response (`201 Created`)**: `ConversationResponse`.
+
+---
+
+### `GET /api/v1/workspaces/{workspace_id}/conversations/{conversation_id}`
+Fetch conversation metadata, ensuring workspace ownership.
+- **URL**: `/api/v1/workspaces/{workspace_id}/conversations/{conversation_id}`
+- **Method**: `GET`
+- **Authentication**: Valid session cookie
+
+---
+
+### `PATCH /api/v1/workspaces/{workspace_id}/conversations/{conversation_id}`
+Rename an existing conversation thread.
+- **URL**: `/api/v1/workspaces/{workspace_id}/conversations/{conversation_id}`
+- **Method**: `PATCH`
+- **Authentication**: Valid session cookie + `X-CSRF-Token` header
+- **Request Body**: `{"title": "New Title"}`
+
+---
+
+### `DELETE /api/v1/workspaces/{workspace_id}/conversations/{conversation_id}`
+Soft-deletes a conversation thread.
+- **URL**: `/api/v1/workspaces/{workspace_id}/conversations/{conversation_id}`
+- **Method**: `DELETE`
+- **Authentication**: Valid session cookie + `X-CSRF-Token` header
+
+---
+
+### `GET /api/v1/workspaces/{workspace_id}/conversations/{conversation_id}/messages`
+List messages within a conversation ordered chronologically.
+- **URL**: `/api/v1/workspaces/{workspace_id}/conversations/{conversation_id}/messages`
+- **Method**: `GET`
+- **Authentication**: Valid session cookie
+- **Query Parameters**: `limit` (default 100), `offset` (default 0)
+- **Response (`200 OK`)**: List of `MessageResponse` items.
+
+---
+
+### `POST /api/v1/workspaces/{workspace_id}/conversations/{conversation_id}/messages`
+Post a user message, perform title derivation, and receive assistant response. Supports `idempotency_key` deduplication.
+- **URL**: `/api/v1/workspaces/{workspace_id}/conversations/{conversation_id}/messages`
+- **Method**: `POST`
+- **Authentication**: Valid session cookie + `X-CSRF-Token` header
+- **Request Body**: `{"content": "string", "idempotency_key": "optional-token"}`
+- **Response (`201 Created`)**: List of 2 `MessageResponse` items `[user_message, assistant_message]`.
+
+---
+
+## 3. Planned Target Contracts (Sprint 11–28)
+
+### 3.1 AI Gateway & Provider Contracts (`/api/v1/ai`)
 
 ---
 

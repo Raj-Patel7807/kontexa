@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from kontexa.api.auth import router as auth_router
+from kontexa.api.conversations import router as conversations_router
 from kontexa.api.health import router as health_router
 from kontexa.api.workspaces import router as workspaces_router
 from kontexa.core.config import Settings
@@ -31,6 +32,10 @@ OPENAPI_TAGS = [
     {
         "name": "Workspaces & Projects",
         "description": "Multi-tenant workspace isolation, RBAC membership, and project CRUD.",
+    },
+    {
+        "name": "Conversations & Chat",
+        "description": "Persistent conversation threads, message history, and AI responses.",
     },
     {
         "name": "System",
@@ -122,6 +127,8 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
     app.include_router(auth_router)
     app.include_router(workspaces_router, prefix=app_settings.api_v1_prefix)
     app.include_router(workspaces_router)
+    app.include_router(conversations_router, prefix=app_settings.api_v1_prefix)
+    app.include_router(conversations_router)
 
     return app
 

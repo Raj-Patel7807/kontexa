@@ -15,6 +15,7 @@ from kontexa.database.models.users import User
 from kontexa.database.session import get_db
 from kontexa.schemas.workspaces import WorkspaceRole
 from kontexa.services.auth import AuthService
+from kontexa.services.conversations import ConversationService
 from kontexa.services.workspaces import WorkspaceService
 
 
@@ -38,6 +39,14 @@ def get_workspace_service(
 ) -> WorkspaceService:
     """Dependency provider for workspace and project tenancy isolation operations."""
     return WorkspaceService(db=db)
+
+
+def get_conversation_service(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    ws_service: Annotated[WorkspaceService, Depends(get_workspace_service)],
+) -> ConversationService:
+    """Dependency provider for conversation and message persistence operations."""
+    return ConversationService(db=db, ws_service=ws_service)
 
 
 async def get_current_user_and_session(
