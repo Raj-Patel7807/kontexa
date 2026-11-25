@@ -59,11 +59,9 @@ To avoid building shallow integrations that provide little engineering value, co
   - PBKDF2-HMAC-SHA256 password hashing and verification, secure HttpOnly/SameSite/Secure session cookies, SHA-256 session token hashing, HMAC-SHA256 CSRF protection, `/register`, `/login`, `/logout`, `/me`, `/csrf` endpoints, Next.js login/register/dashboard screens, and 100% test coverage.
 - **Sprint 08 — Workspace tenancy, membership and access control** `[COMPLETED]`
   - Full workspace and project CRUD, role-based access control (`owner`, `admin`, `member`, `viewer`), centralized authorization dependency, cross-tenant isolation enforcement (IDOR prevention), membership management, responsive frontend workspace switcher, project grid, and member management.
-- **Sprint 09 — Frontend application shell and navigation** `[NEXT SPRINT]`
-  - Responsive authenticated application shell, workspace switcher, project sidebar, loading and error states.
-
-### Phase 3: Conversational AI & Knowledge Retrieval (Sprints 10–14)
-- **Sprint 10 — Conversation and message persistence**
+- **Sprint 09 — Frontend foundation and design system** `[COMPLETED]`
+  - Responsive authenticated application shell, workspace switcher, project selector, accessible UI primitives (Button, Input, Modal, Badge, EmptyState, ErrorBoundary, Skeleton), organization settings page, real API data wiring, and keyboard navigation.
+- **Sprint 10 — Conversation and message persistence** `[NEXT SPRINT]`
   - Conversation CRUD, multipart message persistence, thread history APIs, and frontend conversation view.
 - **Sprint 11 — AI gateway, provider abstraction and model registry**
   - Provider adapters (OpenAI, Anthropic, Gemini), mockable test provider, model configuration, and token accounting.

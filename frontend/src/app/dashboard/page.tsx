@@ -1,9 +1,9 @@
 "use client";
 
+import * as React from "react";
 import { useEffect, useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getCurrentUserApi, logoutApi, getCsrfTokenApi, UserProfile } from "../lib/auth";
+import { getCurrentUserApi, getCsrfTokenApi, UserProfile } from "../lib/auth";
 import {
   listWorkspacesApi,
   createWorkspaceApi,
@@ -15,6 +15,16 @@ import {
   ProjectItem,
   WorkspaceMember,
 } from "../lib/workspaces";
+import { AppShell } from "@/components/app-shell";
+import {
+  Button,
+  Input,
+  Modal,
+  Badge,
+  EmptyState,
+  ErrorBoundary,
+  DashboardSkeleton,
+} from "@/components/ui";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -58,9 +68,8 @@ export default function DashboardPage() {
         if (wsList.length > 0) {
           setSelectedWorkspace(wsList[0]);
         }
-      } catch (err: unknown) {
-        if (!mounted) return;
-        setError(err instanceof Error ? err.message : "Failed to load session");
+      } catch {
+        router.push("/login");
       } finally {
         if (mounted) setLoading(false);
       }
@@ -69,7 +78,7 @@ export default function DashboardPage() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [router]);
 
   // When selected workspace changes, load its projects and members
   useEffect(() => {
@@ -96,13 +105,10 @@ export default function DashboardPage() {
     };
   }, [selectedWorkspace]);
 
-  const handleWorkspaceChange = (wsId: string) => {
-    const ws = workspaces.find((w) => w.id === wsId);
-    if (ws) {
-      setProjects([]);
-      setMembers([]);
-      setSelectedWorkspace(ws);
-    }
+  const handleSelectWorkspace = (ws: WorkspaceItem) => {
+    setProjects([]);
+    setMembers([]);
+    setSelectedWorkspace(ws);
   };
 
   const handleCreateWorkspace = async (e: React.FormEvent) => {
@@ -171,310 +177,264 @@ export default function DashboardPage() {
     });
   };
 
-  const handleLogout = async () => {
-    try {
-      await logoutApi(csrfToken);
-      router.push("/login");
-    } catch {
-      router.push("/login");
-    }
-  };
-
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">
-        Loading workspace session...
+      <div className="min-h-screen bg-slate-950 flex flex-col justify-center">
+        <DashboardSkeleton />
       </div>
     );
   }
 
   if (!user) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-        <h1 className="text-2xl font-bold text-white mb-2">Access Denied</h1>
-        <p className="text-slate-400 mb-6">You must be logged in to access this workspace.</p>
-        <Link
-          href="/login"
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-medium"
-        >
-          Return to Sign In
-        </Link>
-      </div>
-    );
+    return null;
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      {/* Top Navigation Bar */}
-      <header className="border-b border-slate-800 bg-slate-900/60 px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center space-x-6">
-          <Link href="/dashboard" className="text-lg font-bold tracking-tight text-white">
-            Kontexa <span className="text-xs font-normal text-indigo-400 px-2 py-0.5 rounded bg-indigo-950/60 border border-indigo-800/50">Core</span>
-          </Link>
-
-          {/* Workspace Switcher */}
-          <div className="flex items-center space-x-2">
-            <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Workspace:</span>
-            <select
-              value={selectedWorkspace?.id || ""}
-              onChange={(e) => handleWorkspaceChange(e.target.value)}
-              className="bg-slate-800 border border-slate-700 text-white text-sm rounded px-3 py-1 focus:outline-none focus:border-indigo-500"
-            >
-              {workspaces.map((ws) => (
-                <option key={ws.id} value={ws.id}>
-                  {ws.name} ({ws.current_user_role})
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={() => setIsCreatingWorkspace(true)}
-              className="text-xs text-indigo-400 hover:text-indigo-300 font-medium px-2 py-1 rounded hover:bg-slate-800"
-            >
-              + New
-            </button>
-          </div>
-        </div>
-
-        <div className="flex items-center space-x-4 text-sm">
-          <span className="text-slate-400">{user.email}</span>
-          <button
-            onClick={handleLogout}
-            className="px-3 py-1 rounded text-xs font-medium bg-slate-800 hover:bg-rose-900/40 text-slate-300 hover:text-rose-200 border border-slate-700"
-          >
-            Sign Out
-          </button>
-        </div>
-      </header>
-
-      {/* Main Workspace Body */}
-      <div className="flex-1 flex max-w-7xl w-full mx-auto p-6 gap-6">
-        {/* Left: Projects Column */}
-        <section className="w-2/3 flex flex-col gap-4">
-          <div className="flex items-center justify-between">
+    <ErrorBoundary>
+      <AppShell
+        user={user}
+        workspaces={workspaces}
+        currentWorkspace={selectedWorkspace}
+        onSelectWorkspace={handleSelectWorkspace}
+        onOpenCreateWorkspace={() => setIsCreatingWorkspace(true)}
+        csrfToken={csrfToken}
+      >
+        <div className="p-6 max-w-7xl w-full mx-auto space-y-6">
+          {/* Top Bar / Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
             <div>
-              <h2 className="text-xl font-bold text-white">
-                {selectedWorkspace ? selectedWorkspace.name : "No Workspace Selected"}
-              </h2>
-              <p className="text-xs text-slate-400">
-                Slug: <code className="text-indigo-400 font-mono">{selectedWorkspace?.slug}</code> • Role: <span className="font-semibold text-slate-300">{selectedWorkspace?.current_user_role}</span>
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-xl font-bold text-white tracking-tight">
+                  {selectedWorkspace ? selectedWorkspace.name : "Select an Organization"}
+                </h1>
+                {selectedWorkspace && (
+                  <Badge variant="info">
+                    {selectedWorkspace.current_user_role}
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-slate-400 mt-1 font-mono">
+                {selectedWorkspace ? `Slug: ${selectedWorkspace.slug}` : "Create or pick a workspace to get started"}
               </p>
             </div>
+
             {selectedWorkspace && (
-              <button
-                onClick={() => setIsCreatingProject(true)}
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded shadow transition"
-              >
+              <Button size="sm" onClick={() => setIsCreatingProject(true)}>
                 + New Project
-              </button>
+              </Button>
             )}
           </div>
 
           {error && (
-            <div className="p-3 bg-rose-950/50 border border-rose-800/60 rounded text-rose-300 text-sm">
+            <div className="p-3 bg-rose-950/50 border border-rose-800/60 rounded-lg text-rose-300 text-xs font-medium">
               {error}
             </div>
           )}
 
-          {/* Project Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-            {projects.length === 0 ? (
-              <div className="col-span-2 p-8 border border-dashed border-slate-800 rounded-lg text-center text-slate-500 text-sm">
-                No projects yet in this workspace. Create your first project to organize repositories, documents, and chat threads.
+          {/* Grid Layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left 2 Cols: Projects */}
+            <div className="lg:col-span-2 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-300">
+                  Projects ({projects.length})
+                </h2>
               </div>
-            ) : (
-              projects.map((prj) => (
-                <div
-                  key={prj.id}
-                  className="p-4 bg-slate-900/60 border border-slate-800 rounded-lg hover:border-slate-700 transition flex flex-col justify-between"
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <h3 className="font-semibold text-white">{prj.name}</h3>
-                      <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-800/50">
-                        {prj.status}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400 line-clamp-2 mb-3">
-                      {prj.description || "No description provided."}
-                    </p>
-                  </div>
-                  <div className="text-[11px] text-slate-500 font-mono">
-                    slug: {prj.slug}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
 
-        {/* Right: Members & Workspace Info */}
-        <aside className="w-1/3 flex flex-col gap-4">
-          <div className="p-4 bg-slate-900/40 border border-slate-800 rounded-lg">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Members ({members.length})</h3>
-              {selectedWorkspace && (
-                <button
-                  onClick={() => setIsAddingMember(true)}
-                  className="text-xs text-indigo-400 hover:text-indigo-300 font-medium"
-                >
-                  + Add Member
-                </button>
+              {projects.length === 0 ? (
+                <EmptyState
+                  title="No projects in this organization"
+                  description="Projects containerize repositories, documents, and task plans with strict workspace isolation."
+                  actionLabel={selectedWorkspace ? "Create First Project" : undefined}
+                  onAction={() => setIsCreatingProject(true)}
+                />
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {projects.map((prj) => (
+                    <div
+                      key={prj.id}
+                      className="p-5 bg-slate-900/60 border border-slate-800 rounded-xl hover:border-slate-700 hover:bg-slate-900/90 transition-all flex flex-col justify-between group shadow-sm"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className="font-semibold text-slate-100 group-hover:text-indigo-300 transition-colors">
+                            {prj.name}
+                          </h3>
+                          <Badge variant="success">{prj.status}</Badge>
+                        </div>
+                        <p className="text-xs text-slate-400 line-clamp-2 mb-4 leading-relaxed">
+                          {prj.description || "No project description provided."}
+                        </p>
+                      </div>
+                      <div className="flex items-center justify-between pt-3 border-t border-slate-800/60 text-[11px] font-mono text-slate-500">
+                        <span>{prj.slug}</span>
+                        <span>{new Date(prj.created_at).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
 
-            <div className="divide-y divide-slate-800/60 text-sm">
-              {members.map((mem) => (
-                <div key={mem.user_id} className="py-2.5 flex items-center justify-between">
-                  <div className="overflow-hidden mr-2">
-                    <p className="font-medium text-slate-200 truncate">{mem.name || mem.email}</p>
-                    <p className="text-xs text-slate-500 truncate">{mem.email}</p>
-                  </div>
-                  <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 capitalize">
-                    {mem.role}
-                  </span>
+            {/* Right Col: Team Members */}
+            <div className="space-y-4">
+              <div className="p-5 bg-slate-900/50 border border-slate-800 rounded-xl">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                    Team Members ({members.length})
+                  </h2>
+                  {selectedWorkspace && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setIsAddingMember(true)}
+                      className="text-xs text-indigo-400 hover:text-indigo-300 p-0 h-auto"
+                    >
+                      + Add
+                    </Button>
+                  )}
                 </div>
-              ))}
+
+                <div className="divide-y divide-slate-800/60">
+                  {members.length === 0 ? (
+                    <p className="text-xs text-slate-500 py-2">No members loaded.</p>
+                  ) : (
+                    members.map((mem) => (
+                      <div key={mem.user_id} className="py-2.5 flex items-center justify-between gap-2">
+                        <div className="overflow-hidden">
+                          <p className="text-xs font-medium text-slate-200 truncate">{mem.name || mem.email}</p>
+                          <p className="text-[10px] text-slate-500 truncate">{mem.email}</p>
+                        </div>
+                        <Badge variant="default">{mem.role}</Badge>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
           </div>
-        </aside>
-      </div>
+        </div>
 
-      {/* Modal: Create Workspace */}
-      {isCreatingWorkspace && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <form
-            onSubmit={handleCreateWorkspace}
-            className="bg-slate-900 border border-slate-800 rounded-lg max-w-md w-full p-6 shadow-xl"
-          >
-            <h3 className="text-lg font-bold text-white mb-2">Create Workspace</h3>
-            <p className="text-xs text-slate-400 mb-4">
-              Workspaces isolate repositories, documents, and chat contexts between organizations.
-            </p>
-            <input
-              type="text"
+        {/* Modal: Create Workspace */}
+        <Modal
+          isOpen={isCreatingWorkspace}
+          onClose={() => setIsCreatingWorkspace(false)}
+          title="Create Organization"
+          description="Organizations isolate repositories, documents, and chat contexts."
+        >
+          <form onSubmit={handleCreateWorkspace} className="space-y-4">
+            <Input
+              label="Organization Name"
               required
               placeholder="e.g. Acme Engineering"
               value={newWsName}
               onChange={(e) => setNewWsName(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-white mb-4 focus:outline-none focus:border-indigo-500"
             />
-            <div className="flex justify-end gap-2">
-              <button
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() => setIsCreatingWorkspace(false)}
-                className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
               >
                 Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isPending}
-                className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded"
-              >
-                {isPending ? "Creating..." : "Create"}
-              </button>
+              </Button>
+              <Button type="submit" size="sm" isLoading={isPending}>
+                Create Organization
+              </Button>
             </div>
           </form>
-        </div>
-      )}
+        </Modal>
 
-      {/* Modal: Create Project */}
-      {isCreatingProject && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <form
-            onSubmit={handleCreateProject}
-            className="bg-slate-900 border border-slate-800 rounded-lg max-w-md w-full p-6 shadow-xl"
-          >
-            <h3 className="text-lg font-bold text-white mb-2">Create Project</h3>
-            <p className="text-xs text-slate-400 mb-4">
-              Projects group codebases, conversations, and task plans within this workspace.
-            </p>
-            <div className="flex flex-col gap-3 mb-4">
-              <input
-                type="text"
-                required
-                placeholder="Project Name (e.g. Backend API Service)"
-                value={newPrjName}
-                onChange={(e) => setNewPrjName(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
-              />
+        {/* Modal: Create Project */}
+        <Modal
+          isOpen={isCreatingProject}
+          onClose={() => setIsCreatingProject(false)}
+          title="Create Project"
+          description="Projects group codebases, conversations, and task plans within this workspace."
+        >
+          <form onSubmit={handleCreateProject} className="space-y-4">
+            <Input
+              label="Project Name"
+              required
+              placeholder="e.g. Backend API Gateway"
+              value={newPrjName}
+              onChange={(e) => setNewPrjName(e.target.value)}
+            />
+            <div className="flex flex-col gap-1.5 text-left">
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+                Description (Optional)
+              </label>
               <textarea
-                placeholder="Optional description"
                 rows={3}
+                placeholder="High-level goal or repository focus"
                 value={newPrjDesc}
                 onChange={(e) => setNewPrjDesc(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                className="w-full rounded-lg bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-950 transition-colors"
               />
             </div>
-            <div className="flex justify-end gap-2">
-              <button
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() => setIsCreatingProject(false)}
-                className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
               >
                 Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isPending}
-                className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded"
-              >
-                {isPending ? "Creating..." : "Create Project"}
-              </button>
+              </Button>
+              <Button type="submit" size="sm" isLoading={isPending}>
+                Create Project
+              </Button>
             </div>
           </form>
-        </div>
-      )}
+        </Modal>
 
-      {/* Modal: Add Member */}
-      {isAddingMember && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <form
-            onSubmit={handleAddMember}
-            className="bg-slate-900 border border-slate-800 rounded-lg max-w-md w-full p-6 shadow-xl"
-          >
-            <h3 className="text-lg font-bold text-white mb-2">Add Member</h3>
-            <p className="text-xs text-slate-400 mb-4">
-              Add a registered Kontexa user to collaborate in this workspace.
-            </p>
-            <div className="flex flex-col gap-3 mb-4">
-              <input
-                type="email"
-                required
-                placeholder="teammate@example.com"
-                value={newMemberEmail}
-                onChange={(e) => setNewMemberEmail(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
-              />
+        {/* Modal: Add Member */}
+        <Modal
+          isOpen={isAddingMember}
+          onClose={() => setIsAddingMember(false)}
+          title="Add Team Member"
+          description="Grant a registered Kontexa user access to collaborate in this workspace."
+        >
+          <form onSubmit={handleAddMember} className="space-y-4">
+            <Input
+              label="User Email"
+              type="email"
+              required
+              placeholder="teammate@example.com"
+              value={newMemberEmail}
+              onChange={(e) => setNewMemberEmail(e.target.value)}
+            />
+            <div className="flex flex-col gap-1.5 text-left">
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+                Role Assignment
+              </label>
               <select
                 value={newMemberRole}
                 onChange={(e) => setNewMemberRole(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                className="w-full rounded-lg bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 transition-colors"
               >
                 <option value="member">Member (Can create/edit projects & chats)</option>
                 <option value="admin">Admin (Can manage settings & invite members)</option>
                 <option value="viewer">Viewer (Read-only access)</option>
               </select>
             </div>
-            <div className="flex justify-end gap-2">
-              <button
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() => setIsAddingMember(false)}
-                className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
               >
                 Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isPending}
-                className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded"
-              >
-                {isPending ? "Adding..." : "Add Member"}
-              </button>
+              </Button>
+              <Button type="submit" size="sm" isLoading={isPending}>
+                Add Member
+              </Button>
             </div>
           </form>
-        </div>
-      )}
-    </div>
+        </Modal>
+      </AppShell>
+    </ErrorBoundary>
   );
 }
